@@ -1,0 +1,51 @@
+symbol,name,rating,market weight
+NVDA,NVIDIA Corporation,Strong Buy,0.20360403
+AAPL,Apple Inc.,Buy,0.16451322
+MSFT,Microsoft Corporation,Strong Buy,0.11693122
+AVGO,Broadcom Inc.,Strong Buy,0.075106174
+MU,"Micron Technology, Inc.",Strong Buy,0.03048906
+AMD,"Advanced Micro Devices, Inc.",Buy,0.025799954
+ORCL,Oracle Corporation,Buy,0.020703495
+INTC,Intel Corporation,Hold,0.020395514
+CSCO,"Cisco Systems, Inc.",Buy,0.017419778
+LRCX,Lam Research Corporation,Buy,0.0132840155
+AMAT,"Applied Materials, Inc.",Strong Buy,0.012927475
+PLTR,Palantir Technologies Inc.,Buy,0.011983951
+TXN,Texas Instruments Incorporated,Buy,0.010278842
+KLAC,KLA Corporation,Buy,0.008793288
+QCOM,QUALCOMM Incorporated,Hold,0.007923137
+SNDK,Sandisk Corporation,Buy,0.0077769696
+IBM,International Business Machines Corporation,Buy,0.007689826
+ADI,"Analog Devices, Inc.",Buy,0.0076041487
+PANW,"Palo Alto Networks, Inc.",Buy,0.007347274
+ANET,"Arista Networks, Inc.",Strong Buy,0.0066693546
+STX,Seagate Technology Holdings plc,Buy,0.0066545485
+WDC,Western Digital Corporation,Buy,0.0061985035
+GLW,Corning Incorporated,Buy,0.0061587803
+DELL,Dell Technologies Inc.,Buy,0.0058700247
+MRVL,"Marvell Technology, Inc.",Strong Buy,0.0057781506
+APH,Amphenol Corporation,Strong Buy,0.0057372125
+UBER,"Uber Technologies, Inc.",Buy,0.0057026586
+CRWD,"CrowdStrike Holdings, Inc.",Buy,0.0056415456
+CRM,"Salesforce, Inc.",Buy,0.0052955295
+SHOP,Shopify Inc.,Buy,0.0048548575
+INTU,Intuit Inc.,Strong Buy,0.0040547983
+ACN,Accenture plc,Buy,0.003866806
+ADBE,Adobe Inc.,Hold,0.003733791
+NOW,"ServiceNow, Inc.",Strong Buy,0.003657926
+SNPS,"Synopsys, Inc.",Buy,0.0035907023
+CDNS,"Cadence Design Systems, Inc.",Strong Buy,0.003573158
+FTNT,"Fortinet, Inc.",Hold,0.0033560335
+ADP,"Automatic Data Processing, Inc.",Hold,0.0031986097
+CIEN,Ciena Corporation,Buy,0.0029249461
+MPWR,"Monolithic Power Systems, Inc.",Strong Buy,0.0028411038
+LITE,Lumentum Holdings Inc.,Buy,0.0028175244
+COHR,Coherent Corp.,Buy,0.002791476
+DDOG,"Datadog, Inc.",Strong Buy,0.002762015
+NXPI,NXP Semiconductors N.V.,Buy,0.002745701
+NET,"Cloudflare, Inc.",Buy,0.0026052536
+MSI,"Motorola Solutions, Inc.",Buy,0.0024355745
+MSTR,Strategy Inc,Strong Buy,0.0023212163
+TEL,TE Connectivity plc,Buy,0.0022336633
+KEYS,"Keysight Technologies, Inc.",Buy,0.0022331164
+CRWV,"CoreWeave, Inc.",Buy,0.0021840045

@@ -1,0 +1,51 @@
+symbol,name,rating,market weight
+LLY,Eli Lilly and Company,Buy,0.13272336
+JNJ,Johnson & Johnson,Buy,0.08082819
+ABBV,AbbVie Inc.,Buy,0.055053845
+UNH,UnitedHealth Group Incorporated,Buy,0.052973993
+MRK,"Merck & Co., Inc.",Buy,0.04074274
+AMGN,Amgen Inc.,Buy,0.026097631
+TMO,Thermo Fisher Scientific Inc.,Strong Buy,0.024126194
+GILD,"Gilead Sciences, Inc.",Buy,0.023827918
+ISRG,"Intuitive Surgical, Inc.",Buy,0.022089496
+ABT,Abbott Laboratories,Buy,0.021791194
+PFE,Pfizer Inc.,Buy,0.021381818
+CVS,CVS Health Corporation,Strong Buy,0.01812075
+SYK,Stryker Corporation,Buy,0.017417401
+BMY,Bristol-Myers Squibb Company,Hold,0.017239422
+DHR,Danaher Corporation,Strong Buy,0.016972397
+VRTX,Vertex Pharmaceuticals Incorporated,Buy,0.016425159
+MDT,Medtronic plc,Buy,0.0144801475
+HCA,"HCA Healthcare, Inc.",Buy,0.013898143
+MCK,McKesson Corporation,Strong Buy,0.013540517
+ELV,"Elevance Health, Inc.",Buy,0.012629911
+BSX,Boston Scientific Corporation,Strong Buy,0.011596991
+CI,The Cigna Group,Strong Buy,0.011176657
+REGN,"Regeneron Pharmaceuticals, Inc.",Buy,0.010842037
+COR,"Cencora, Inc.",Buy,0.007426157
+EW,Edwards Lifesciences Corporation,Buy,0.0069401087
+CAH,"Cardinal Health, Inc.",Strong Buy,0.006771026
+IDXX,"IDEXX Laboratories, Inc.",Buy,0.006177938
+BDX,"Becton, Dickinson and Company",Buy,0.0058549526
+ALNY,"Alnylam Pharmaceuticals, Inc.",Buy,0.0056748027
+HUM,Humana Inc.,Hold,0.005425645
+WAT,Waters Corporation,Buy,0.0047875363
+A,"Agilent Technologies, Inc.",Buy,0.0046752607
+ZTS,Zoetis Inc.,Buy,0.00460838
+RVMD,"Revolution Medicines, Inc.",Strong Buy,0.0045864144
+MDLN,Medline Inc.,,0.004532457
+RMD,ResMed Inc.,Buy,0.0043371767
+CNC,Centene Corporation,Hold,0.0042615775
+BIIB,Biogen Inc.,Buy,0.004219075
+IQV,IQVIA Holdings Inc.,Strong Buy,0.0041805003
+GEHC,GE HealthCare Technologies Inc.,Buy,0.0040935753
+NTRA,"Natera, Inc.",Strong Buy,0.0039529316
+VEEV,Veeva Systems Inc.,Buy,0.0038397964
+UTHR,United Therapeutics Corporation,Buy,0.0035744794
+DXCM,"DexCom, Inc.",Strong Buy,0.0035221956
+INSM,Insmed Incorporated,Strong Buy,0.0035036837
+RPRX,Royalty Pharma plc,Strong Buy,0.0034697189
+ILMN,"Illumina, Inc.",Buy,0.00319413
+WST,"West Pharmaceutical Services, Inc.",Buy,0.0031692702
+ROIV,Roivant Sciences Ltd.,Strong Buy,0.00310476
+MTD,Mettler-Toledo International Inc.,Buy,0.0030875918

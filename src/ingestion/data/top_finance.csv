@@ -1,0 +1,51 @@
+symbol,name,rating,market weight
+BRK-B,Berkshire Hathaway Inc.,Buy,0.09717091
+JPM,JPMorgan Chase & Co.,Buy,0.09340549
+V,Visa Inc.,Strong Buy,0.05781955
+BAC,Bank of America Corporation,Strong Buy,0.046397578
+MA,Mastercard Incorporated,Strong Buy,0.04075574
+GS,"The Goldman Sachs Group, Inc.",Hold,0.03342283
+MS,Morgan Stanley,Buy,0.031443406
+C,Citigroup Inc.,Buy,0.028989319
+RY,Royal Bank of Canada,Buy,0.024104197
+WFC,Wells Fargo & Company,Buy,0.020970123
+AXP,American Express Company,Buy,0.019963667
+TD,The Toronto-Dominion Bank,Buy,0.018576862
+BLK,"BlackRock, Inc.",Buy,0.015675168
+SCHW,The Charles Schwab Corporation,Buy,0.01475163
+BX,Blackstone Inc.,Buy,0.013448677
+CB,Chubb Limited,Buy,0.01173436
+SPGI,S&P Global Inc.,Strong Buy,0.011137729
+PGR,The Progressive Corporation,Hold,0.010892926
+COF,Capital One Financial Corporation,Buy,0.010870995
+CME,CME Group Inc.,Hold,0.010107541
+BK,The Bank of New York Mellon Corporation,Buy,0.008649686
+ICE,"Intercontinental Exchange, Inc.",Strong Buy,0.008147329
+KKR,KKR & Co. Inc.,Buy,0.008126257
+PNC,"The PNC Financial Services Group, Inc.",Buy,0.0079771355
+USB,U.S. Bancorp,Buy,0.0076961215
+APO,"Apollo Global Management, Inc.",Buy,0.0072845933
+MRSH,"Marsh & McLennan Companies, Inc.",Buy,0.007242039
+MCO,Moody's Corporation,Buy,0.0069924383
+HOOD,"Robinhood Markets, Inc.",Buy,0.0064834184
+AON,Aon plc,Buy,0.006323437
+TRV,"The Travelers Companies, Inc.",Hold,0.005949309
+AFL,Aflac Incorporated,Hold,0.005549108
+NU,Nu Holdings Ltd.,Strong Buy,0.005531384
+TFC,Truist Financial Corporation,Buy,0.005460623
+ALL,The Allstate Corporation,Buy,0.0052225394
+NDAQ,"Nasdaq, Inc.",Buy,0.00480651
+COIN,"Coinbase Global, Inc.",Buy,0.004805576
+AJG,Arthur J. Gallagher & Co.,Buy,0.004795068
+MET,"MetLife, Inc.",Buy,0.0047911326
+FNMA,Federal National Mortgage Association,Buy,0.004188603
+FITB,Fifth Third Bancorp,Buy,0.0040053064
+STT,State Street Corporation,Buy,0.0039483723
+AMP,"Ameriprise Financial, Inc.",Buy,0.0039466876
+MSCI,MSCI Inc.,Buy,0.003812917
+AIG,"American International Group, Inc.",Buy,0.0037663858
+PYPL,"PayPal Holdings, Inc.",Hold,0.0036562812
+IBKR,"Interactive Brokers Group, Inc.",Buy,0.0036173488
+CBOE,"Cboe Global Markets, Inc.",Hold,0.0035458778
+RKT,"Rocket Companies, Inc.",Buy,0.0035254818
+HIG,"The Hartford Insurance Group, Inc.",Buy,0.0034264277
