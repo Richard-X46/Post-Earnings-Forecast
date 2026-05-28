@@ -15,7 +15,7 @@ import requests
 import time
 from stem import Signal
 from stem.control import Controller
-
+import ast
 
 
 load_dotenv()
@@ -70,7 +70,7 @@ def keygen():
 
 # keygen()
 AV_keys = os.getenv("AV_KEYS")
-test_key = ast.literal_eval(AV_keys)[0]
+test_key = AV_keys
 
 
 

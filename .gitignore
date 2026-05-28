@@ -3,6 +3,13 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# md files
+temp/
+
+# temp files
+temp.ipynb
+notes.md
+writing.md
 # C extensions
 *.so
 
