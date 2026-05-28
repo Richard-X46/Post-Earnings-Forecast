@@ -17,6 +17,8 @@ import s3fs
 import fsspec
 import logging
 import time
+import boto3
+
 
 # config and setup
 load_dotenv()
@@ -36,6 +38,15 @@ s3 = s3fs.S3FileSystem(
     key=os.getenv("S3_ACCESS_KEY"),
     secret=os.getenv("S3_SECRET_KEY"),
     token=os.getenv("AWS_SESSION_TOKEN"),
+)
+
+# s3 setup using boto3
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=os.getenv("S3_ACCESS_KEY"),
+    aws_secret_access_key=os.getenv("S3_SECRET_KEY"),
+    aws_session_token=os.getenv("AWS_SESSION_TOKEN"),  # optional but important if using temp creds
+    region_name='ca-central-1'
 )
 
 keygen()
@@ -206,8 +217,29 @@ def write_transcripts_to_s3(symbol, transcripts_df):
 def compact_transcripts(symbol):
     pass
 
+
+
+# checking symbols that exist on s3 for transcripts
+
+def get_syms_that_have_transcripts():
+    bucket = os.getenv("S3_BUCKET")
+    paginator = s3_client.get_paginator("list_objects_v2")
+    symbols = []
+
+    for page in paginator.paginate(
+        Bucket=bucket,
+        Prefix="post-earnings-forecast/transcripts/",
+        Delimiter="/"
+    ):
+        symbols += [
+            p["Prefix"].split("symbol=")[1].rstrip("/")
+            for p in page.get("CommonPrefixes", [])
+            if "symbol=" in p["Prefix"]
+        ]
+    return symbols
+
 if __name__ == "__main__":
-    
+
 
     # read snp500 data from csv
     path = "src/ingestion/data/snp500_*.csv"
@@ -218,19 +250,35 @@ if __name__ == "__main__":
         "token": os.getenv("AWS_SESSION_TOKEN"),
             "expand": True,})
 
-    # filter last 50 rows for testing
-    df 
+    # 
+    
+ 
+    #total symbols in snp500 list
+    total_symbols = df.select(pl.col("Symbol")).unique().to_series().to_list()
 
-    # filter last 100
-    df = df.tail(100)
-    df=df.head(5)
-    # test loop for few tickers
-    test_symbols = ["NVDA"]
 
-    test_symbols = df.select(pl.col("Symbol")).unique().to_series().to_list()
+    # symbols that already have transcripts on s3 to avoid unnecessary AV calls and circuit rotations
+    symbols_with_transcripts = get_syms_that_have_transcripts()
 
-    for idx, sym in enumerate(test_symbols):
-        print(f"Processing symbol: {sym} ({idx+1}/{len(test_symbols)})")
+
+    my_frame = pd.read_clipboard()
+
+    my_list = my_frame['symbols_to_backfill'].tolist()
+
+    # symbols to backfill transcripts
+
+    symbols_to_backfill = [sym for sym in total_symbols if sym not in symbols_with_transcripts]
+
+    # symbols_to_backfill= symbols_to_backfill[:10] # limit to 10 for testing, remove this line for full backfill
+
+
+
+
+    # temp_df = pd.DataFrame({"symbols_to_backfill": symbols_to_backfill})
+    # temp_df.to_clipboard(index=False)
+
+    for idx, sym in enumerate(symbols_to_backfill):
+        print(f"Processing symbol: {sym} ({idx+1}/{len(symbols_to_backfill)})")
 
         av_earnings_df = get_av_earnings(sym, apikey=test_key) # API call to AV
         if av_earnings_df is None or av_earnings_df.height == 0:
@@ -242,7 +290,6 @@ if __name__ == "__main__":
 
         transcripts_df = fetch_transcripts_for_symbol(sym, av_earnings_df) # API calls to AV with tor circuit rotation for transcripts
         write_transcripts_to_s3(sym, transcripts_df)
-        transcripts_df.columns
 
 
 
