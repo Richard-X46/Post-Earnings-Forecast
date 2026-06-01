@@ -10,6 +10,10 @@ temp/
 temp.ipynb
 notes.md
 writing.md
+backup/
+
+
+
 # C extensions
 *.so
 

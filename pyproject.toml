@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.43.0",
+    "deltalake>=1.6.0",
     "dotenv>=0.9.9",
     "duckdb>=1.5.2",
     "ipykernel>=7.2.0",
