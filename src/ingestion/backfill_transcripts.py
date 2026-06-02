@@ -261,14 +261,16 @@ if __name__ == "__main__":
     symbols_with_transcripts = get_syms_that_have_transcripts()
 
 
-    my_frame = pd.read_clipboard()
+    my_frame = pd.read_clipboard(header=None)
 
-    my_list = my_frame['symbols_to_backfill'].tolist()
+    #my_list = my_frame['symbols_to_backfill'].tolist()
+    my_list = my_frame.values.flatten().tolist()
 
     # symbols to backfill transcripts
 
-    symbols_to_backfill = [sym for sym in total_symbols if sym not in symbols_with_transcripts]
-
+    #symbols_to_backfill = [sym for sym in total_symbols if sym not in symbols_with_transcripts]
+    
+    symbols_to_backfill = [sym for sym in my_list if sym not in symbols_with_transcripts]
     # symbols_to_backfill= symbols_to_backfill[:10] # limit to 10 for testing, remove this line for full backfill
 
 
