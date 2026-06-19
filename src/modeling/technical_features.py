@@ -87,7 +87,7 @@ def normalize_indicators(sdf: pl.DataFrame) -> pl.DataFrame:
         ((close - pl.col("vwap")) / pl.col("vwap")).alias("vwap_pct"),
 
         # z-score
-        ((pl.col("obv") - pl.col("obv").mean()) / pl.col("obv").std()).alias("obv_zscore")
+        ((pl.col("obv") - pl.col("obv").rolling_mean(252)) / pl.col("obv").rolling_std(252)).alias("obv_zscore")
     ).drop(["open", "high", "low", "volume",
             "ema_50", "ema_200", "bb_upper", "bb_middle", "bb_lower", "obv", "vwap"])
 
@@ -161,9 +161,9 @@ def build_modeling_table(df_daily, df_earnings, feature_cols = None, earnings_da
  
  
 if __name__ == "__main__":
-    # ── Load ──
-    OHLCV_PATH = r"C:\Users\satya\OneDrive\Documents\Work\Post-Earnings-Forecast\src\ingestion\data\backup\ohlcv_delta_backup.parquet"
-    EARNINGS_PATH = r"C:\Users\satya\OneDrive\Documents\Work\Post-Earnings-Forecast\src\ingestion\data\backup\earnings_delta_backup.parquet"
+    # Load
+    OHLCV_PATH = "src/ingestion/data/backup/ohlcv_delta_backup.parquet"
+    EARNINGS_PATH = "src/ingestion/data/backup/earnings_delta_backup.parquet"
  
     df_ohlcv = pl.read_parquet(OHLCV_PATH)
     df_earnings = pl.read_parquet(EARNINGS_PATH)
@@ -171,13 +171,13 @@ if __name__ == "__main__":
     print(f"Earnings: {df_earnings.shape}")
     print(f"Earnings columns: {df_earnings.columns}")
  
-    # ── Build daily features ──
+    # Build daily features
     df_daily = build_technical_features(df_ohlcv)
     print(f"\nDaily table: {df_daily.shape}")
     print(f"Columns: {df_daily.columns}")
     print(df_daily.head(5))
  
-    # ── Build modeling table ──
+    # Build modeling table
     # check earnings date column name from print above, adjust if needed
     df_model = build_modeling_table(df_daily, df_earnings, earnings_date_column="reportedDate")
     print(f"\nModeling table: {df_model.shape}")
@@ -185,7 +185,7 @@ if __name__ == "__main__":
     print(f"Target return: mean={df_model['target_return'].mean():.4f}, std={df_model['target_return'].std():.4f}")
     print(df_model.head(5))
  
-    # ── Save for reuse by b1, b2, b3 pipelines ──
+    # Save for reuse by b1, b2, b3 pipelines
     import os
     os.makedirs("src/modeling/data", exist_ok=True)
     df_model.write_parquet("src/modeling/data/tech_modeling_table.parquet")
