@@ -97,8 +97,7 @@ tech_feature_cols = [
     "rsi", "macd", "macd_hist", "roc",
     "ema50_pct", "ema200_pct", "ema50_200_pct", "adx",
     "atr", "bb_width", "bb_pct_b", "sigma",
-    "obv_zscore", "vwap_pct",
-]
+    "obv_zscore", "vwap_pct",]
 
 
 def build_technical_features(df: pl.DataFrame) -> pl.DataFrame:

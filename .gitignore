@@ -11,8 +11,7 @@ temp.ipynb
 notes.md
 writing.md
 backup/
-
-
+src/ingestion/data/transcript_staging
 
 # C extensions
 *.so
