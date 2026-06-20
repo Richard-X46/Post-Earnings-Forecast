@@ -1617,6 +1617,7 @@ dependencies = [
     { name = "seaborn" },
     { name = "stem" },
     { name = "ta-lib" },
+    { name = "threadpoolctl" },
     { name = "yfinance" },
 ]
 
@@ -1642,6 +1643,7 @@ requires-dist = [
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "stem", specifier = ">=1.8.2" },
     { name = "ta-lib", specifier = ">=0.6.8" },
+    { name = "threadpoolctl", specifier = ">=3.6.0" },
     { name = "yfinance", specifier = ">=1.3.0" },
 ]
 
