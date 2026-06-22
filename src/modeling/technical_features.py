@@ -20,7 +20,7 @@ def compute_technical_indicators(sdf: pl.DataFrame) -> pl.DataFrame:
 
     # Momentum indicators
     rsi = talib.RSI(close, timeperiod=14)
-    macd, macd_signal, macd_hist = talib.MACD(close)
+    macd, _, macd_hist = talib.MACD(close)
     roc = talib.ROC(close, timeperiod=10)
     
     # Price level 
@@ -46,7 +46,6 @@ def compute_technical_indicators(sdf: pl.DataFrame) -> pl.DataFrame:
     return sdf.with_columns(
             pl.Series("rsi", rsi),
             pl.Series("macd", macd),
-            pl.Series("macd_signal", macd_signal),
             pl.Series("macd_hist", macd_hist),
             pl.Series("roc", roc),
             pl.Series("ema_50", ema_50),
@@ -74,7 +73,6 @@ def normalize_indicators(sdf: pl.DataFrame) -> pl.DataFrame:
         ((pl.col("volume") - pl.col("volume").rolling_mean(window_size=20)) / pl.col("volume").rolling_mean(window_size=20)).alias("volume_rel"),
 
         (pl.col("macd") / close).alias("macd"),
-        (pl.col("macd_signal") / close).alias("macd_signal"),
         (pl.col("macd_hist") / close).alias("macd_hist"),
         (pl.col("atr") / close).alias("atr"),
 
@@ -88,7 +86,7 @@ def normalize_indicators(sdf: pl.DataFrame) -> pl.DataFrame:
 
         # z-score
         ((pl.col("obv") - pl.col("obv").rolling_mean(252)) / pl.col("obv").rolling_std(252)).alias("obv_zscore")
-    ).drop(["open", "high", "low", "volume",
+    ).drop(["open", "low", "volume",
             "ema_50", "ema_200", "bb_upper", "bb_middle", "bb_lower", "obv", "vwap"])
 
 
@@ -129,6 +127,7 @@ def build_modeling_table(df_daily, df_earnings, feature_cols = None, earnings_da
  
         dates = sym_daily["date"].to_list()
         closes = sym_daily["close"].to_numpy()
+        highs = sym_daily["high"].to_numpy()
         feat_data = {col: sym_daily[col].to_numpy() for col in feature_cols}
  
         for row in sym_earnings.iter_rows(named=True):
@@ -139,14 +138,33 @@ def build_modeling_table(df_daily, df_earnings, feature_cols = None, earnings_da
                 continue
             if t0 - 10 < 0 or t0 + 10 >= len(dates):
                 continue
- 
-            target_return = float(closes[t0 + 10] / closes[t0 + 1] - 1)
- 
+
+            entry_price = closes[t0 + 1]  # close price on the day after earnings
+            
+            # high prices during drift window (t+2 to t+10)
+            drift_highs = highs[t0 + 2 : t0 + 11]
+
+            max_high = float(drift_highs.max())
+            min_high = float(drift_highs.min())
+            max_day = int(drift_highs.argmax() + 2)
+            min_day = int(drift_highs.argmin() + 2)
+
+            # original target return calculation
+            target_return = float(max_high / entry_price - 1)
+            
+                      
             event = {
                 "symbol": symbol,
                 "earnings_date": earn_date,
+                "entry_price": float(entry_price),
+                # original targets
                 "target_return": target_return,
-                "target_direction": 1 if target_return > 0 else 0,
+                "target_class": 1 if target_return >= 0.03 else 0,
+                # high-based targets
+                "max_high": max_high,
+                "min_high": min_high,
+                "max_day": max_day,
+                "min_day": min_day,
             }
  
             for t in range(-10, 2):
@@ -180,8 +198,10 @@ if __name__ == "__main__":
     # check earnings date column name from print above, adjust if needed
     df_model = build_modeling_table(df_daily, df_earnings, earnings_date_column="reportedDate")
     print(f"\nModeling table: {df_model.shape}")
-    print(f"Target direction: {df_model['target_direction'].mean():.1%} positive")
-    print(f"Target return: mean={df_model['target_return'].mean():.4f}, std={df_model['target_return'].std():.4f}")
+    print(f"target_return: mean={df_model['target_return'].mean():.4f}, std={df_model['target_return'].std():.4f}")
+    print(f"max_high: mean={df_model['max_high'].mean():.2f}")
+    print(f"min_high: mean={df_model['min_high'].mean():.2f}")
+    print(f"max_day distribution:\n{df_model['max_day'].value_counts().sort('max_day')}")
     print(df_model.head(5))
  
     # Save for reuse by b1, b2, b3 pipelines
@@ -189,5 +209,7 @@ if __name__ == "__main__":
     os.makedirs("src/modeling/data", exist_ok=True)
     df_model.write_parquet("src/modeling/data/tech_modeling_table.parquet")
     print(f"\nSaved to src/modeling/data/tech_modeling_table.parquet")
+
+
 
 
