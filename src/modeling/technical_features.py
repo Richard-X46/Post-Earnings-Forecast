@@ -149,17 +149,16 @@ def build_modeling_table(df_daily, df_earnings, feature_cols = None, earnings_da
             max_day = int(drift_highs.argmax() + 2)
             min_day = int(drift_highs.argmin() + 2)
 
-            # original target return calculation
+            # target construction
             target_return = float(max_high / entry_price - 1)
             
-                      
             event = {
                 "symbol": symbol,
                 "earnings_date": earn_date,
                 "entry_price": float(entry_price),
-                # original targets
+                # targets
                 "target_return": target_return,
-                "target_class": 1 if target_return >= 0.03 else 0,
+                "target_direction": 1 if target_return >= 0.03 else 0,
                 # high-based targets
                 "max_high": max_high,
                 "min_high": min_high,
