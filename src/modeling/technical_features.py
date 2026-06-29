@@ -158,7 +158,11 @@ def build_modeling_table(df_daily, df_earnings, feature_cols = None, earnings_da
                 "entry_price": float(entry_price),
                 # targets
                 "target_return": target_return,
-                "target_direction": 1 if target_return >= 0.03 else 0,
+                "target_class": (
+                   0 if target_return < 0.02
+                   else 1 if target_return < 0.04
+                   else 2
+                ),
                 # high-based targets
                 "max_high": max_high,
                 "min_high": min_high,
@@ -205,9 +209,9 @@ if __name__ == "__main__":
  
     # Save for reuse by b1, b2, b3 pipelines
     import os
-    os.makedirs("src/modeling/data", exist_ok=True)
-    df_model.write_parquet("src/modeling/data/tech_modeling_table.parquet")
-    print(f"\nSaved to src/modeling/data/tech_modeling_table.parquet")
+    os.makedirs("src/data/model_staging", exist_ok=True)
+    df_model.write_parquet("src/data/model_staging/tech_modeling_table.parquet")
+    print(f"\nSaved to src/data/model_staging/tech_modeling_table.parquet")
 
 
 
