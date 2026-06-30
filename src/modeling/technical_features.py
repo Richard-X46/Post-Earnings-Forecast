@@ -108,12 +108,22 @@ def build_technical_features(df: pl.DataFrame) -> pl.DataFrame:
     return pl.concat(frames)
 
 
-def build_modeling_table(df_daily, df_earnings, feature_cols = None, earnings_date_column = "reportedDate"):
-    """One row per earnings event, pivoted features (t-10 to t+1) + target."""
+def build_modeling_table(df_daily, df_earnings, feature_cols=None, earnings_date_column="reportedDate", spx_data=None, vix_data=None):
+    """One row per earnings event, pivoted features (t-10 to t+1) + target + optional CAR."""
     from bisect import bisect_left
  
     if feature_cols is None:
         feature_cols = tech_feature_cols
+
+    spx_date_map = {}
+    if spx_data is not None:
+        for row in spx_data.iter_rows(named=True):
+            spx_date_map[row["date"]] = row["spx_close"]
+
+    vix_date_map = {}
+    if vix_data is not None:
+        for row in vix_data.iter_rows(named=True):
+            vix_date_map[row["date"]] = row["vix_close"]
  
     events = []
     symbols = df_earnings["symbol"].unique().to_list()
@@ -151,6 +161,45 @@ def build_modeling_table(df_daily, df_earnings, feature_cols = None, earnings_da
 
             # target construction
             target_return = float(max_high / entry_price - 1)
+
+            # CAR: Σ(R_i,t - R_m,t) for t = -1, 0, +1
+            stock_rets = [
+                (closes[t0 - 1] - closes[t0 - 2]) / closes[t0 - 2],
+                (closes[t0] - closes[t0 - 1]) / closes[t0 - 1],
+                (closes[t0 + 1] - closes[t0]) / closes[t0],
+            ]
+            if spx_date_map:
+                spx_closes = [spx_date_map.get(d) for d in [dates[t0 - 2], dates[t0 - 1], dates[t0], dates[t0 + 1]]]
+                if None not in spx_closes:
+                    spx_rets = [
+                        (spx_closes[1] - spx_closes[0]) / spx_closes[0],
+                        (spx_closes[2] - spx_closes[1]) / spx_closes[1],
+                        (spx_closes[3] - spx_closes[2]) / spx_closes[2],
+                    ]
+                    car = sum(s - m for s, m in zip(stock_rets, spx_rets))
+                else:
+                    car = None
+            else:
+                car = None
+
+            # CAR: Σ(R_i,t - R_m,t) for t = +2 to t = +10 (post-earnings drift)
+            if spx_date_map:
+                t2_t10_stock_rets = [
+                    (closes[t0 + d] - closes[t0 + d - 1]) / closes[t0 + d - 1]
+                    for d in range(2, 11)
+                ]
+                t2_t10_spx_dates = [dates[t0 + d - 1] for d in range(2, 11)] + [dates[t0 + 10]]
+                t2_t10_spx_closes = [spx_date_map.get(d) for d in t2_t10_spx_dates]
+                if None not in t2_t10_spx_closes:
+                    t2_t10_spx_rets = [
+                        (t2_t10_spx_closes[i + 1] - t2_t10_spx_closes[i]) / t2_t10_spx_closes[i]
+                        for i in range(9)
+                    ]
+                    car_t2_t10 = sum(s - m for s, m in zip(t2_t10_stock_rets, t2_t10_spx_rets))
+                else:
+                    car_t2_t10 = None
+            else:
+                car_t2_t10 = None
             
             event = {
                 "symbol": symbol,
@@ -163,6 +212,8 @@ def build_modeling_table(df_daily, df_earnings, feature_cols = None, earnings_da
                    else 1 if target_return < 0.04
                    else 2
                 ),
+                "car_3day": car,
+                "car_t2_t10": car_t2_t10,
                 # high-based targets
                 "max_high": max_high,
                 "min_high": min_high,
@@ -174,6 +225,9 @@ def build_modeling_table(df_daily, df_earnings, feature_cols = None, earnings_da
                 suffix = f"_t{t}" if t <= 0 else f"_t+{t}"
                 for col in feature_cols:
                     event[f"{col}{suffix}"] = float(feat_data[col][t0 + t])
+                if vix_date_map:
+                    vix_val = vix_date_map.get(dates[t0 + t])
+                    event[f"vix_close{suffix}"] = float(vix_val) if vix_val is not None else None
  
             events.append(event)
  
@@ -184,12 +238,18 @@ if __name__ == "__main__":
     # Load
     OHLCV_PATH = "src/ingestion/data/backup/ohlcv_delta_backup.parquet"
     EARNINGS_PATH = "src/ingestion/data/backup/earnings_delta_backup.parquet"
+    SPX_PATH = "src/ingestion/data/index_data.parquet"
  
     df_ohlcv = pl.read_parquet(OHLCV_PATH)
     df_earnings = pl.read_parquet(EARNINGS_PATH)
     print(f"OHLCV: {df_ohlcv.shape}")
     print(f"Earnings: {df_earnings.shape}")
     print(f"Earnings columns: {df_earnings.columns}")
+
+    idx_data = pl.read_parquet(SPX_PATH)
+    spx_data = idx_data.select(["date", "spx_close"])
+    vix_data = idx_data.select(["date", "vix_close"])
+    print(f"SPX data: {spx_data.shape}, VIX data: {vix_data.shape}")
  
     # Build daily features
     df_daily = build_technical_features(df_ohlcv)
@@ -199,9 +259,12 @@ if __name__ == "__main__":
  
     # Build modeling table
     # check earnings date column name from print above, adjust if needed
-    df_model = build_modeling_table(df_daily, df_earnings, earnings_date_column="reportedDate")
+    df_model = build_modeling_table(df_daily, df_earnings, earnings_date_column="reportedDate", spx_data=spx_data, vix_data=vix_data)
     print(f"\nModeling table: {df_model.shape}")
     print(f"target_return: mean={df_model['target_return'].mean():.4f}, std={df_model['target_return'].std():.4f}")
+    print(f"car_3day: mean={df_model['car_3day'].mean():.4f}, std={df_model['car_3day'].std():.4f}, nulls={df_model['car_3day'].is_null().sum()}")
+    print(f"car_t2_t10: mean={df_model['car_t2_t10'].mean():.4f}, std={df_model['car_t2_t10'].std():.4f}, nulls={df_model['car_t2_t10'].is_null().sum()}")
+    print(f"vix_close (sample): min={df_model['vix_close_t-10'].min():.2f}, max={df_model['vix_close_t-10'].max():.2f}, nulls={df_model['vix_close_t-10'].is_null().sum()}")
     print(f"max_high: mean={df_model['max_high'].mean():.2f}")
     print(f"min_high: mean={df_model['min_high'].mean():.2f}")
     print(f"max_day distribution:\n{df_model['max_day'].value_counts().sort('max_day')}")
@@ -215,4 +278,4 @@ if __name__ == "__main__":
 
 
 
-
+    
