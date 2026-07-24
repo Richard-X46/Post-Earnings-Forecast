@@ -12,7 +12,7 @@ notes.md
 writing.md
 backup/
 src/ingestion/data/transcript_staging
-
+src/modeling/models
 # C extensions
 *.so
 
