@@ -5,6 +5,12 @@ upload model staging data to modal volume:
 
 run the pipeline on modal cloud:
     modal run src/modeling/modal_tabnet_pead.py
+
+Download results:
+    modal volume get tabnet-pead-output /out/results.parquet .
+    modal volume get tabnet-pead-output /out/per_fold_summary.parquet .
+    modal volume get tabnet-pead-output /out/histories/clf.json .
+    modal volume get tabnet-pead-output /out/histories/reg.json .
 """
 import modal
 
@@ -56,15 +62,13 @@ CLF_DEFAULTS = dict(
     n_d=16, n_a=16, n_steps=3, gamma=1.5,
     lambda_sparse=1e-3, lr=2e-2, step_size=30,
     scheduler_gamma=0.9, max_epochs=30, patience=8,
-    batch_size=4096, clip_value=2.0, seed=42,
-)
+    batch_size=4096, clip_value=2.0, seed=42)
 
 REG_DEFAULTS = dict(
     n_d=16, n_a=16, n_steps=3, gamma=1.5,
     lambda_sparse=1e-3, lr=5e-3, step_size=30,
     scheduler_gamma=0.9, max_epochs=30, patience=8,
-    batch_size=4096, clip_value=2.0, seed=42,
-)
+    batch_size=4096, clip_value=2.0, seed=42)
 
 DEVICE = "cuda"
 INITIAL_TRAIN_YEARS = 7  # 2014–2020

@@ -11,6 +11,8 @@ vol = modal.Volume.from_name("model-staging", create_if_missing=True)
 FILES = [
     ("src/data/model_staging/tech_modeling_table.parquet",
      "tech_modeling_table.parquet"),
+    ("src/data/model_staging/tech_daily_table.parquet",
+     "tech_daily_table.parquet"),
     ("src/data/model_staging/finbert_tx_agg_weighted.parquet",
      "finbert_tx_agg_weighted.parquet"),
     ("src/data/model_staging/nz_sentiment.parquet",

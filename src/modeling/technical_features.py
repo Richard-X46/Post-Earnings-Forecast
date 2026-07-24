@@ -162,6 +162,13 @@ def build_modeling_table(df_daily, df_earnings, feature_cols=None, earnings_date
             # target construction
             target_return = float(max_high / entry_price - 1)
 
+            # --- alternative targets for robustness testing ---
+            # close[t+10] relative to entry_price
+            target_return_close_t10 = float(closes[t0 + 10] / entry_price - 1)
+
+            # average high over drift window (t+2 to t+10)
+            target_return_avg_high = float(drift_highs.mean() / entry_price - 1)
+
             # CAR: Σ(R_i,t - R_m,t) for t = -1, 0, +1
             stock_rets = [
                 (closes[t0 - 1] - closes[t0 - 2]) / closes[t0 - 2],
@@ -208,9 +215,22 @@ def build_modeling_table(df_daily, df_earnings, feature_cols=None, earnings_date
                 # targets
                 "target_return": target_return,
                 "target_class": (
-                   0 if target_return < 0.02
-                   else 1 if target_return < 0.04
-                   else 2
+                    0 if target_return < 0.02
+                    else 1 if target_return < 0.04
+                    else 2
+                ),
+                # alternative targets
+                "target_return_close_t10": target_return_close_t10,
+                "target_class_close_t10": (
+                    0 if target_return_close_t10 < 0.02
+                    else 1 if target_return_close_t10 < 0.04
+                    else 2
+                ),
+                "target_return_avg_high": target_return_avg_high,
+                "target_class_avg_high": (
+                    0 if target_return_avg_high < 0.02
+                    else 1 if target_return_avg_high < 0.04
+                    else 2
                 ),
                 "car_3day": car,
                 "car_t2_t10": car_t2_t10,
@@ -256,6 +276,8 @@ if __name__ == "__main__":
     print(f"\nDaily table: {df_daily.shape}")
     print(f"Columns: {df_daily.columns}")
     print(df_daily.head(5))
+    # writing df_daily to parquet for reuse by b1, b2, b3 pipelines
+    df_daily.write_parquet("src/data/model_staging/tech_daily_table.parquet")
  
     # Build modeling table
     # check earnings date column name from print above, adjust if needed
