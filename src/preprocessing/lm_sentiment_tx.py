@@ -2,6 +2,7 @@ import pysentiment2 as ps
 import polars as pl
 
 lm = ps.LM()
+lm?
 
 def get_lm_polarity(text: str) -> float:
     if text is None:
@@ -25,6 +26,11 @@ tx_lz = (
     .filter(pl.col("speaker") != "Operator")
 )
 
+tx_lz.schema
+
+tx_lz = tx_lz.collect()
+tx_lz.estimated_size()
+
 symbol = "NVDA"
 symbol_data = tx_lz.filter(pl.col("symbol") == symbol).collect()
 
@@ -40,3 +46,14 @@ text = """ally, we revealed plans to build Earth-2, the world's most powerful AI
 """
 
 get_lm_polarity(text)
+
+
+path = "/Users/richardpears/Downloads/finbert_tx"
+
+df = pl.scan_parquet(path)
+
+df.collect()
+df.schema
+
+
+

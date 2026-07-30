@@ -5,13 +5,16 @@ __pycache__/
 
 # md files
 temp/
-
+docs/
+src/data/transcript_staging/
 # temp files
 temp.ipynb
 notes.md
 writing.md
 backup/
-src/ingestion/data/transcript_staging
+src/data/transcript_staging/
+src/ingestion/data/transcript_staging/
+class notes/
 src/modeling/models
 # C extensions
 *.so

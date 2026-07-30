@@ -40,6 +40,8 @@ df_agg_weighted = (
 )
 
 
+23_060 - 24_048
+
 # writing to model staging
 path_ml_stg = "src/data/model_staging/"
 
@@ -86,7 +88,7 @@ for col in tx_cols:
     print(f"{col}: {nulls} nulls ({pct:.1%})")
 
 # writing to model staging
-df_tx.write_parquet(path_ml_stg + "finbert_tx_agg_weighted.parquet")
+# df_tx.write_parquet(path_ml_stg + "finbert_tx_agg_weighted.parquet")
 
 
 
@@ -136,7 +138,7 @@ df_post_agg = df_post.group_by("symbol", "reportedDate").agg(**agg_cols).with_co
 # Join back to earnings
 df_earnings = pl.scan_parquet("src/data/backup/earnings_delta_backup.parquet").collect()
 
-
+df_earnings.schema
 
 
 
@@ -152,7 +154,12 @@ for suffix, df_sent in [("pre", df_pre_agg), ("post", df_post_agg)]:
 pre_cols = ["overall_sentiment_score", "ticker_sentiment_score", "relevance_score", "news_count"]
 df_earnings = df_earnings.rename({c: f"{c}_pre" for c in pre_cols})
 
+# null counts in news df_earnings
+df_earnings.null_count().transpose(include_header=True)
 
+pl.Config.set_tbl_rows(111)
+
+12693  - 24048
 
 # --- sector/year imputation for null sentiment ---
 df_info = pl.read_parquet("src/data/metrics/snp500_info.parquet").select("symbol", "sector", "industry")
