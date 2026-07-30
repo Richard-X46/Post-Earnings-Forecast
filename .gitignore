@@ -7,6 +7,10 @@ __pycache__/
 temp/
 docs/
 src/data/transcript_staging/
+
+# files exceeding GitHub 100 MB limit
+src/data/model_staging/tech_daily_table.parquet
+src/modeling/model_outputs/modal_tabnet_outputs/e30_attention_masks.json
 # temp files
 temp.ipynb
 notes.md
