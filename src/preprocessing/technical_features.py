@@ -3,6 +3,7 @@ import polars as pl
 import talib
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 
 # indicator computation
@@ -253,18 +254,66 @@ def build_modeling_table(df_daily, df_earnings, feature_cols=None, earnings_date
  
     return pl.DataFrame(events)
  
- 
+
 if __name__ == "__main__":
     # Load
     OHLCV_PATH = "src/ingestion/data/backup/ohlcv_delta_backup.parquet"
     EARNINGS_PATH = "src/ingestion/data/backup/earnings_delta_backup.parquet"
     SPX_PATH = "src/ingestion/data/index_data.parquet"
- 
+
     df_ohlcv = pl.read_parquet(OHLCV_PATH)
     df_earnings = pl.read_parquet(EARNINGS_PATH)
     print(f"OHLCV: {df_ohlcv.shape}")
     print(f"Earnings: {df_earnings.shape}")
     print(f"Earnings columns: {df_earnings.columns}")
+
+    # Build a separate forward-looking table for the trading-strategy join.
+    # This is separate from df_daily, whose feature-processing logic remains unchanged.
+    strat_table_path = Path("src/data/model_staging/strat_table.parquet")
+    strat_table_path.parent.mkdir(parents=True, exist_ok=True)
+    modeling_symbols = df_earnings.select("symbol").unique()
+    modeling_events = (
+        df_earnings
+        .select([
+            "symbol",
+            pl.col("reportedDate").alias("date"),
+        ])
+        .filter(pl.col("date") < pl.date(2026, 1, 1))
+        .unique()
+    )
+    strat_table = (
+        df_ohlcv
+        .select(["symbol", "date", "high", "low", "close"])
+        .join(modeling_symbols, on="symbol", how="semi")
+        .sort(["symbol", "date"])
+    )
+
+    strat_offsets = list(range(2, 11))
+    for offset in strat_offsets:
+        strat_table = strat_table.with_columns([
+            pl.col("high").shift(-offset).over("symbol").alias(f"high_t+{offset}"),
+            pl.col("low").shift(-offset).over("symbol").alias(f"low_t+{offset}"),
+            pl.col("date").shift(-offset).over("symbol").alias(f"date_t+{offset}"),
+        ])
+
+    strat_table = (
+        strat_table
+        .with_columns([
+            pl.col("date").shift(-1).over("symbol").alias("entry_date"),
+            pl.col("close").shift(-10).over("symbol").alias("close_t10"),
+        ])
+        .join(modeling_events, on=["symbol", "date"], how="semi")
+        .select(
+            ["symbol", "date"]
+            + [f"high_t+{offset}" for offset in strat_offsets]
+            + [f"low_t+{offset}" for offset in strat_offsets]
+            + [f"date_t+{offset}" for offset in strat_offsets]
+            + ["entry_date", "close_t10"]
+        )
+    )
+    strat_table.write_parquet(strat_table_path)
+    print(f"Strategy table: {strat_table.shape}")
+    print(f"Saved to {strat_table_path}")
 
     idx_data = pl.read_parquet(SPX_PATH)
     spx_data = idx_data.select(["date", "spx_close"])
@@ -276,12 +325,27 @@ if __name__ == "__main__":
     print(f"\nDaily table: {df_daily.shape}")
     print(f"Columns: {df_daily.columns}")
     print(df_daily.head(5))
+
+
+
+
+    # filter date before 2026-01-01
+    df_daily = df_daily.filter(
+    pl.col("date") < pl.date(2026, 1, 1))
+
     # writing df_daily to parquet for reuse by b1, b2, b3 pipelines
     df_daily.write_parquet("src/data/model_staging/tech_daily_table.parquet")
- 
+
+    df_daily.schema
+
+
+
+
+
     # Build modeling table
     # check earnings date column name from print above, adjust if needed
     df_model = build_modeling_table(df_daily, df_earnings, earnings_date_column="reportedDate", spx_data=spx_data, vix_data=vix_data)
+    # Modeling validations
     print(f"\nModeling table: {df_model.shape}")
     print(f"target_return: mean={df_model['target_return'].mean():.4f}, std={df_model['target_return'].std():.4f}")
     print(f"car_3day: mean={df_model['car_3day'].mean():.4f}, std={df_model['car_3day'].std():.4f}, nulls={df_model['car_3day'].is_null().sum()}")
@@ -291,7 +355,19 @@ if __name__ == "__main__":
     print(f"min_high: mean={df_model['min_high'].mean():.2f}")
     print(f"max_day distribution:\n{df_model['max_day'].value_counts().sort('max_day')}")
     print(df_model.head(5))
- 
+    #
+    df_model.schema
+
+    # writing only CAR cols with index for base paper
+    df_car = df_model.select(["symbol", "earnings_date", "car_3day", "car_t2_t10"])
+    df_car.write_parquet("src/data/model_staging/car_tech_modeling_table.parquet")
+
+
+
+    # drop CAR cols in df_model
+    df_model = df_model.drop(["car_3day", "car_t2_t10"])
+
+
     # Save for reuse by b1, b2, b3 pipelines
     import os
     os.makedirs("src/data/model_staging", exist_ok=True)
