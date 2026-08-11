@@ -93,6 +93,12 @@ EXCLUDE_COLS = [
     "symbol", "earnings_date", "entry_price", "target_return",
     "target_class", "max_high", "min_high", "max_day", "min_day",
     "year", "quarter",
+    "target_return_close_t10",
+    "target_class_close_t10",
+    "target_return_avg_high",
+    "target_class_avg_high",
+    "car_3day",
+    "car_t2_t10",
 ]
 
 
