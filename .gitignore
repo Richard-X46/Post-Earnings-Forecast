@@ -7,7 +7,8 @@ __pycache__/
 temp/
 docs/
 src/data/transcript_staging/
-
+#pickle files
+src/modeling/b1-5/models
 # files exceeding GitHub 100 MB limit
 src/data/model_staging/tech_daily_table.parquet
 src/modeling/model_outputs/modal_tabnet_outputs/e30_attention_masks.json
@@ -233,3 +234,5 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.databricks

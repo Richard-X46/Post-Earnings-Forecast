@@ -5,8 +5,8 @@ from tqdm import tqdm
 import os
 import gc
 
-TRANSCRIPT_FILE = "src/ingestion/data/backup/temp_transcripts.parquet"
-OUTPUT_DIR = "src/ingestion/data/finbert_tx"
+TRANSCRIPT_FILE = "src/data/backup/temp_transcripts.parquet"
+OUTPUT_DIR = "src/data/backup/finbert_tx"
 INFERENCE_BATCH_SIZE = 64
 
 def get_device():
@@ -92,7 +92,15 @@ def main():
         .filter(pl.col("speaker") != "Operator")
     )
 
-    process_symbol("NVDA", tx_lz, tokenizer, model, device)
+    symbols = (
+        tx_lz.select("symbol").unique().collect()
+        .get_column("symbol").to_list()
+    )
+    symbols.sort()
+    print(f"Found {len(symbols)} unique symbols")
+
+    for symbol in symbols:
+        process_symbol(symbol, tx_lz, tokenizer, model, device)
 
 if __name__ == "__main__":
     main()

@@ -256,9 +256,9 @@ def build_modeling_table(df_daily, df_earnings, feature_cols=None, earnings_date
  
 if __name__ == "__main__":
     # Load
-    OHLCV_PATH = "src/ingestion/data/backup/ohlcv_delta_backup.parquet"
-    EARNINGS_PATH = "src/ingestion/data/backup/earnings_delta_backup.parquet"
-    SPX_PATH = "src/ingestion/data/index_data.parquet"
+    OHLCV_PATH = "src/data/backup/ohlcv_delta_backup.parquet"
+    EARNINGS_PATH = "src/data/backup/earnings_delta_backup.parquet"
+    SPX_PATH = "src/data/raw/metrics/index_data.parquet"
  
     df_ohlcv = pl.read_parquet(OHLCV_PATH)
     df_earnings = pl.read_parquet(EARNINGS_PATH)
