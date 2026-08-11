@@ -13,35 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
-
-# path = "src/ingestion/data/snp500_*.csv"
-source = f"s3://{os.getenv('S3_BUCKET')}/post-earnings-forecast/snp500/*.csv"
-df = pl.read_csv(source, storage_options={
-    "key": os.getenv("S3_ACCESS_KEY"),
-    "secret": os.getenv("S3_SECRET_KEY"),
-    "token": os.getenv("AWS_SESSION_TOKEN"),
-        "expand": True,})
-
-
-
-# new delta table 
-
-# create a duckdb connection
-con = duckdb.connect()
-con.execute("INSTALL aws; LOAD aws;")
-con.execute("INSTALL httpfs; LOAD httpfs;")
-con.execute("CALL load_aws_credentials();") 
-
-
-
-bucket = os.getenv('S3_BUCKET')
-
-
-# writing to s3 delta lake table name - 
-
-symbols = df["Symbol"].to_list()
-
-
+bucket = os.getenv("S3_BUCKET")
 DELTA_PATH = f"s3://{bucket}/post-earnings-forecast/ohlcv_delta/"
 
 storage_options = {
@@ -49,6 +21,17 @@ storage_options = {
     "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
     "AWS_REGION": "ca-central-1",
 }
+
+
+def load_snp500_symbols():
+    source = f"s3://{bucket}/post-earnings-forecast/snp500/*.csv"
+    return pl.read_csv(source, storage_options={
+        "key": os.getenv("S3_ACCESS_KEY"),
+        "secret": os.getenv("S3_SECRET_KEY"),
+        "token": os.getenv("AWS_SESSION_TOKEN"),
+        "expand": True,
+    })
+
 
 def fetch_ohlcv(symbol: str) -> pl.DataFrame | None:
     hist = yf.Ticker(symbol).history(period="max")
@@ -64,9 +47,6 @@ def fetch_ohlcv(symbol: str) -> pl.DataFrame | None:
     )
 
 
-# fetch_ohlcv("AAPL")
-
-
 def write_ohlcv(df: pl.DataFrame):
     DeltaTable(DELTA_PATH, storage_options=storage_options).merge(
         source=df.to_arrow(),
@@ -78,91 +58,73 @@ def write_ohlcv(df: pl.DataFrame):
      .execute()
 
 
-
-# scan ohlcv table to check for duplicates
-
-df = pl.read_delta(DELTA_PATH, storage_options=storage_options)
-
-existing_syms = df.select("symbol").unique().to_series().to_list()
-
-pending_syms = [sym for sym in symbols if sym not in existing_syms]
-
-print(f"Total symbols: {len(symbols)}")
-print(f"Existing symbols: {len(existing_syms)}")
-print(f"Pending symbols: {len(pending_syms)}")
-
-# pending symbols
-
-fixed_pending_syms = ['BRK-B', 'BF-B']
+def get_existing_symbols():
+    df = pl.read_delta(DELTA_PATH, storage_options=storage_options)
+    return df.select("symbol").unique().to_series().to_list()
 
 
-# fetch all symbols in parallel - network bound so threads help
-with ThreadPoolExecutor(max_workers=10) as executor:
-    results = list(executor.map(fetch_ohlcv, fixed_pending_syms))
+def find_pending_symbols(all_symbols, existing_symbols):
+    return [sym for sym in all_symbols if sym not in existing_symbols]
 
 
-all_data = [df for df in results if df is not None]
-len(all_data)
-len(results)
-
-# write_deltalake(
-#     DELTA_PATH,
-#     pl.concat(all_data).to_arrow(),
-#     partition_by=["symbol"],
-#     mode="overwrite", # this nukes everything
-#     storage_options=storage_options
-# )
-
-DeltaTable(DELTA_PATH, storage_options=storage_options).merge(
-        source=pl.concat(all_data).to_arrow(),
-        predicate="target.symbol = source.symbol AND target.date = source.date",
-        source_alias="source",
-        target_alias="target"
-    ).when_matched_update_all() \
-     .when_not_matched_insert_all() \
-     .execute()
+def backfill_ohlcv(symbols):
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(fetch_ohlcv, symbols))
+    all_data = [df for df in results if df is not None]
+    if all_data:
+        write_ohlcv(pl.concat(all_data))
+    return all_data
 
 
-
-# -------
-
-# duckdb scan on delta table to get data
-query = f"""
-    SELECT *
-    FROM delta_scan('{DELTA_PATH}')
-"""
-
-con.execute(query).df()
-
+def smoke_test():
+    print("=== Smoke test: fetch_ohlcv ===")
+    test_sym = "IBM"
+    df = fetch_ohlcv(test_sym)
+    if df is not None and not df.is_empty():
+        print(f"SUCCESS: Fetched {df.height} rows for {test_sym}")
+        print(df.head(3))
+    else:
+        print(f"FAILURE: No data returned for {test_sym}")
 
 
-storage_options = {
-    "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
-    "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
-    "AWS_REGION": "ca-central-1",
-}
-bucket = os.getenv('S3_BUCKET')
-DELTA_PATH = f"s3://{bucket}/post-earnings-forecast/ohlcv_delta/"
-df = pl.read_delta(DELTA_PATH, storage_options=storage_options)
-df.head()
+if __name__ == "__main__":
+    smoke_test()
 
+    snp500_df = load_snp500_symbols()
+    symbols = snp500_df["Symbol"].to_list()
 
-# filter df for AAPL sort by date
-df.filter(pl.col("symbol") == "AAPL").sort("date", descending=False).head()
+    existing = get_existing_symbols()
+    pending = find_pending_symbols(symbols, existing)
 
-# size of the dataframe in GB
-df.estimated_size() / 1e9
+    print(f"Total symbols: {len(symbols)}")
+    print(f"Existing symbols: {len(existing)}")
+    print(f"Pending symbols: {len(pending)}")
 
-# filter on data for after 2010 only
-df.filter(
-    pl.col("date") >= pl.lit("2010-01-01").str.to_date()
-).to_pandas()
+    fixed_pending_syms = ["BRK-B", "BF-B"]
+    backfill_ohlcv(fixed_pending_syms)
 
+    con = duckdb.connect()
+    con.execute("INSTALL aws; LOAD aws;")
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+    con.execute("CALL load_aws_credentials();")
 
-# checking if duplicates exist for symbol and date combination
-duplicates_df = (
-    df.select(["symbol", "date"])
-    .group_by(["symbol", "date"])
-    .len(name="count")
-    .filter(pl.col("count") > 1)
-)
+    query = f"""
+        SELECT *
+        FROM delta_scan('{DELTA_PATH}')
+    """
+    con.execute(query).df()
+
+    df = pl.read_delta(DELTA_PATH, storage_options=storage_options)
+    df.head()
+    df.filter(pl.col("symbol") == "AAPL").sort("date", descending=False).head()
+    df.estimated_size() / 1e9
+    df.filter(
+        pl.col("date") >= pl.lit("2010-01-01").str.to_date()
+    ).to_pandas()
+
+    duplicates_df = (
+        df.select(["symbol", "date"])
+        .group_by(["symbol", "date"])
+        .len(name="count")
+        .filter(pl.col("count") > 1)
+    )

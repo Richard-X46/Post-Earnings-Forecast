@@ -129,11 +129,6 @@ def get_news_sentiment(sym,time_from,time_to, limit,topics, sort, apikey=test_ke
 
 
 
-
-
-
-
-
 if __name__ == "__main__": 
 
     sym = "TSLA"

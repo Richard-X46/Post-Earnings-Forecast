@@ -48,16 +48,23 @@ TABLES = {
         pa.field("av_quarter",          pa.string()),
         pa.field("time_from",           pa.string()),
     ])
+},
+
+    # delta table for earnings call transcripts
+    "transcripts": {
+        "path": f"s3://{bucket}/post-earnings-forecast/transcripts_delta/",
+        "partition_by": ["symbol"],
+        "schema": pa.schema([
+            pa.field("symbol",      pa.string()),
+            pa.field("av_quarter",  pa.string()),
+            pa.field("transcript",  pa.list_(pa.struct([
+                pa.field("speaker", pa.string()),
+                pa.field("content", pa.string()),
+                pa.field("title",   pa.string()),
+            ]))),
+        ])
+    },
 }
-
-    # "transcripts": {
-    # "path": f"s3://{bucket}/post-earnings-forecast/transcripts_delta/",
-    # "partition_by": ["symbol"],
-
-}
-
-
-
 
 # create delta tables if they don't exist
 

@@ -1,68 +1,97 @@
-import polars as pl
+"""
+Backup of S3 delta data for the following tables:
+1. earnings data from alpha vantage
+2. ohlcv data from yfinance for all symbols in the S&P 500 list
+3. transcripts data from the earnings call transcript API (temp, incomplete)
+
+Also performs S3 delta vacuum for cleanup.
+"""
+
 import os
+
+import polars as pl
+from deltalake import DeltaTable
 from dotenv import load_dotenv
 
-
-load_dotenv()
-
-storage_options = {
-    "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
-    "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
-    "AWS_REGION": "ca-central-1",
-}
-
-
-# ---/// backup of s3 data for the following tables
-# 1. earnings data from alpha vantage
-# 2. ohlcv data from yfinance for all symbols in the S&P 500 list
-# 3. transcripts data from the earnings call transcript API , temp added for now as it is incomplete
-# backup path 
 BACKUP_PATH = "src/ingestion/data/backup/"
 
 
-#EARNINGS BACKUP
-DELTA_EARNINGS = f"s3://{os.getenv('S3_BUCKET')}/post-earnings-forecast/earnings_delta/"
-
-earnigns_df = pl.scan_delta(DELTA_EARNINGS, storage_options=storage_options).collect()
-earnigns_df.write_parquet(f"{BACKUP_PATH}earnings_delta_backup.parquet")
-
-# OHLCV BACKUP
-DELTA_OHLCV = f"s3://{os.getenv('S3_BUCKET')}/post-earnings-forecast/ohlcv_delta/"
-
-ohlcv_df = pl.scan_delta(DELTA_OHLCV, storage_options=storage_options).collect()
-ohlcv_df.write_parquet(f"{BACKUP_PATH}ohlcv_delta_backup.parquet")
-
-#TRANSCRIPT BACKUP
-DELTA_TRANSCRIPT = f"s3://{os.getenv('S3_BUCKET')}/post-earnings-forecast/transcripts_delta/"
-transcript_df = pl.scan_delta(DELTA_TRANSCRIPT, storage_options=storage_options).collect()
-transcript_df.write_parquet(f"{BACKUP_PATH}temp_transcripts.parquet") # temp for now till validation is done on all syms
+def _get_storage_options():
+    return {
+        "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
+        "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
+        "AWS_REGION": "ca-central-1",
+    }
 
 
+def _delta_path(table: str) -> str:
+    bucket = os.getenv("S3_BUCKET")
+    return f"s3://{bucket}/post-earnings-forecast/{table}_delta/"
 
 
-
-### S3 Delta vacuum for cleanup
-# Removes files not referenced in the transaction log. Useful for
-# cleaning up old files after compaction or backfill and for
-# reducing storage costs by deleting unreferenced files.
-
-
-DELTA_TABLES =[DELTA_EARNINGS, DELTA_OHLCV, DELTA_TRANSCRIPT]
-
-for delta_table in DELTA_TABLES:
-    dt = DeltaTable(delta_table, storage_options=storage_options)
-    #checking for files that would be deleted with a dry run
-    dead_files = dt.vacuum(retention_hours=0, dry_run=True,enforce_retention_duration=False)
-    print(f"Files to be deleted from {delta_table}: {len(dead_files)}")
-
-    # actually delete
-    dt.vacuum(retention_hours=0, dry_run=False,enforce_retention_duration=False)
+def backup_earnings(storage_options: dict) -> pl.DataFrame:
+    path = _delta_path("earnings")
+    df = pl.scan_delta(path, storage_options=storage_options).collect()
+    out = f"{BACKUP_PATH}earnings_delta_backup.parquet"
+    df.write_parquet(out)
+    print(f"Earnings backup written: {out}  ({df.height} rows)")
+    return df
 
 
-dt.update()
-dead_files = dt.vacuum(retention_hours=0, dry_run=True, enforce_retention_duration=False)
-print(len(dead_files))
+def backup_ohlcv(storage_options: dict) -> pl.DataFrame:
+    path = _delta_path("ohlcv")
+    df = pl.scan_delta(path, storage_options=storage_options).collect()
+    out = f"{BACKUP_PATH}ohlcv_delta_backup.parquet"
+    df.write_parquet(out)
+    print(f"OHLCV backup written:   {out}  ({df.height} rows)")
+    return df
 
-dt.load_as_version(dt.version())
+
+def backup_transcripts(storage_options: dict) -> pl.DataFrame:
+    path = _delta_path("transcripts")
+    df = pl.scan_delta(path, storage_options=storage_options).collect()
+    out = f"{BACKUP_PATH}temp_transcripts.parquet"
+    df.write_parquet(out)
+    print(f"Transcript backup written: {out}  ({df.height} rows)")
+    return df
 
 
+def vacuum_delta_tables(storage_options: dict):
+    tables = ["earnings", "ohlcv", "transcripts"]
+    for table in tables:
+        path = _delta_path(table)
+        dt = DeltaTable(path, storage_options=storage_options)
+        dead_files = dt.vacuum(retention_hours=0, dry_run=True, enforce_retention_duration=False)
+        print(f"Files to be deleted from {table}_delta: {len(dead_files)}")
+        dt.vacuum(retention_hours=0, dry_run=False, enforce_retention_duration=False)
+
+
+def smoke_test(storage_options: dict):
+    print("=== Smoke test: backup ===")
+    path = _delta_path("earnings")
+    try:
+        df = pl.scan_delta(path, storage_options=storage_options).limit(1).collect()
+        if df.is_empty():
+            raise RuntimeError("Earnings delta table returned no rows")
+        print(f"SUCCESS: Connected to earnings delta, {df.columns} columns available")
+    except Exception as e:
+        print(f"FAIL: Could not read earnings delta — {e}")
+
+
+def main():
+    load_dotenv()
+    storage_options = _get_storage_options()
+
+    os.makedirs(BACKUP_PATH, exist_ok=True)
+
+    backup_earnings(storage_options)
+    backup_ohlcv(storage_options)
+    backup_transcripts(storage_options)
+
+    vacuum_delta_tables(storage_options)
+
+
+if __name__ == "__main__":
+    storage_options = _get_storage_options()
+    smoke_test(storage_options)
+    main()

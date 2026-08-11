@@ -3,7 +3,8 @@
 
 import polars as pl
 import os
-from ingestion.transcript_news import  tor_get,test_key
+import requests
+import logging
 from dotenv import load_dotenv
 from deltalake import DeltaTable
 
@@ -19,7 +20,7 @@ storage_options = {
 
 # --- func to get earnings data for a symbol from alpha vantage and return as a dataframe
 
-def get_av_earnings(sym, apikey=test_key):
+def get_av_earnings(sym, apikey=None):
     """
     Fetch earnings data for a given symbol from Alpha Vantage and return as a DataFrame.
 
@@ -30,9 +31,11 @@ def get_av_earnings(sym, apikey=test_key):
     Returns:
     pl.DataFrame: A DataFrame containing the earnings data.
     """
+    if apikey is None:
+        apikey = os.getenv("AV_PREMIUM_KEY")
     url = f"https://www.alphavantage.co/query?function=EARNINGS&symbol={sym}&apikey={apikey}"
     print(f"Fetching AV earnings for {sym} from {url}")
-    res = tor_get(url)
+    res = requests.get(url).json()
     try:
         df = pl.DataFrame(res["quarterlyEarnings"])
         df = df.with_columns([
@@ -69,90 +72,84 @@ def get_av_earnings(sym, apikey=test_key):
 
 
 
-# snp500 symbols from csv in s3
-
-path = "src/ingestion/data/snp500_*.csv"
-source = f"s3://{os.getenv('S3_BUCKET')}/post-earnings-forecast/snp500/*.csv"
-df = pl.read_csv(source, storage_options={
-    "key": os.getenv("S3_ACCESS_KEY"),
-    "secret": os.getenv("S3_SECRET_KEY"),
-    "token": os.getenv("AWS_SESSION_TOKEN"),
-        "expand": True,})
-
-
-
-#-----/// compaction of existing hive earnings to delta table for earnings 
-
-# old hive table
-hive_earnings_df = pl.scan_parquet(f"s3://{os.getenv('S3_BUCKET')}/post-earnings-forecast/earnings/*/*.parquet",
-         storage_options=storage_options).collect()
-hive_earnings_df.columns
-
-
-
-#  delta table for earnings / check table_setup.py for schema definition and creation of delta table
 DELTA_EARNINGS = f"s3://{os.getenv('S3_BUCKET')}/post-earnings-forecast/earnings_delta/"
 
 
+def load_snp500_symbols():
+    source = f"s3://{os.getenv('S3_BUCKET')}/post-earnings-forecast/snp500/*.csv"
+    return pl.read_csv(source, storage_options={
+        "key": os.getenv("S3_ACCESS_KEY"),
+        "secret": os.getenv("S3_SECRET_KEY"),
+        "token": os.getenv("AWS_SESSION_TOKEN"),
+        "expand": True,
+    })
 
-# writing to a new s3 delta lake table name - earnings_delta
-DeltaTable(DELTA_EARNINGS, storage_options=storage_options).merge(
+
+def compact_hive_to_delta():
+    hive_earnings_df = pl.scan_parquet(
+        f"s3://{os.getenv('S3_BUCKET')}/post-earnings-forecast/earnings/*/*.parquet",
+        storage_options=storage_options,
+    ).collect()
+
+    DeltaTable(DELTA_EARNINGS, storage_options=storage_options).merge(
         source=hive_earnings_df.to_arrow(),
         predicate="target.symbol = source.symbol AND target.av_quarter = source.av_quarter",
         source_alias="source",
-        target_alias="target"
+        target_alias="target",
     ).when_matched_update_all() \
      .when_not_matched_insert_all() \
      .execute()
 
-
-# scanning the delta table to validate compaction
-delta_earnings_df = pl.scan_delta(DELTA_EARNINGS, storage_options=storage_options).collect()
-delta_earnings_df.head()
+    delta_earnings_df = pl.scan_delta(DELTA_EARNINGS, storage_options=storage_options).collect()
+    return delta_earnings_df
 
 
-delta_earnings_df['symbol'].unique()    
+def find_missing_symbols(snp500_df, delta_earnings_df):
+    syms = snp500_df["Symbol"].to_list()
+    existing = delta_earnings_df["symbol"].unique().to_list()
+    return set(syms) - set(existing)
 
 
+def backfill_symbols(symbols):
+    for i, sym in enumerate(symbols):
+        print(f"Processing {sym} ({i+1}/{len(symbols)})")
+        av_earnings_df = get_av_earnings(sym)
+        if av_earnings_df is not None and not av_earnings_df.is_empty():
+            DeltaTable(DELTA_EARNINGS, storage_options=storage_options).merge(
+                source=av_earnings_df.to_arrow(),
+                predicate="target.symbol = source.symbol AND target.av_quarter = source.av_quarter",
+                source_alias="source",
+                target_alias="target",
+            ).when_matched_update_all() \
+             .when_not_matched_insert_all() \
+             .execute()
+            print(f"Backfilled earnings data for {sym} from Alpha Vantage")
+        else:
+            print(f"No earnings data found for {sym} from Alpha Vantage")
 
 
-# ---// dealing with missing syms
-
-
-syms = df["Symbol"].to_list()
-
-earnings_existing_syms = delta_earnings_df["symbol"].unique().to_list()
-
-missing_syms = set(syms) - set(earnings_existing_syms)
-
-missing_manual = ['AZO', 'BF-B', 'BRK-B'] # replace . with - for BRK-B and BF-B
-
-# checking if missing manual part of delta_earnings_df
-delta_earnings_df.filter(pl.col('symbol').is_in(missing_manual))['symbol'].unique()
-
-
-# ---- backfill the missing symbols for earnings delta table
-
-
-for i,sym in enumerate(missing_manual):
-    print(f"Processing {sym} ({i+1}/{len(missing_manual)})")
-    # get the data from alpha vantage
-    av_earnings_df = get_av_earnings(sym)
-    if av_earnings_df is not None and not av_earnings_df.is_empty():
-        # write to delta lake
-        DeltaTable(DELTA_EARNINGS, storage_options=storage_options).merge(
-            source=av_earnings_df.to_arrow(),
-            predicate="target.symbol = source.symbol AND target.av_quarter = source.av_quarter",
-            source_alias="source",
-            target_alias="target"
-        ).when_matched_update_all() \
-         .when_not_matched_insert_all() \
-         .execute()
-        print(f"Backfilled earnings data for {sym} from Alpha Vantage")
+def smoke_test():
+    print("=== Smoke test: get_av_earnings ===")
+    test_sym = "IBM"
+    df = get_av_earnings(test_sym)
+    if df is not None and not df.is_empty():
+        print(f"SUCCESS: Fetched {df.height} rows for {test_sym}")
+        print(df.head(3))
     else:
-        print(f"No earnings data found for {sym} from Alpha Vantage")
+        print(f"FAILURE: No data returned for {test_sym} — check API key or rate limits")
 
 
+if __name__ == "__main__":
+    smoke_test()
 
+    snp500_df = load_snp500_symbols()
+    delta_earnings_df = compact_hive_to_delta()
+    delta_earnings_df.head()
+    delta_earnings_df["symbol"].unique()
 
-# 
+    missing_syms = find_missing_symbols(snp500_df, delta_earnings_df)
+
+    missing_manual = ["AZO", "BF-B", "BRK-B"]
+    delta_earnings_df.filter(pl.col("symbol").is_in(missing_manual))["symbol"].unique()
+
+    backfill_symbols(missing_manual)

@@ -1,160 +1,148 @@
+"""
+Migrates transcripts data from S3 hive-partitioned parquet to Delta Lake format.
+Also validates the resulting table with schema and content checks.
+"""
+
+import json
+import os
+
 import duckdb
 import polars as pl
-import os
-from dotenv import load_dotenv
-from deltalake.writer import write_deltalake
 from deltalake import DeltaTable
-import json
+from deltalake.writer import write_deltalake
+from dotenv import load_dotenv
 
 load_dotenv()
 
+BUCKET = os.getenv("S3_BUCKET")
+DELTA_PATH = f"s3://{BUCKET}/post-earnings-forecast/transcripts_delta/"
+S3_PARQUET_PATH = f"s3://{BUCKET}/post-earnings-forecast/transcripts/*/*/*.parquet"
+BACKUP_PATH = "src/ingestion/data/backup/"
 
 
-# duckdb connection setup for reading from s3 and writing to delta lake
-con = duckdb.connect()
-con.execute("INSTALL aws; LOAD aws;")
-con.execute("INSTALL httpfs; LOAD httpfs;")
-con.execute("CALL load_aws_credentials();") 
-con.execute("""
-    CREATE OR REPLACE SECRET s3_clean_secret (
-        TYPE S3,
-        PROVIDER credential_chain,
-        CHAIN 'env;config',
-        REGION 'ca-central-1'
-    );
-""")
-
-bucket = os.getenv('S3_BUCKET')
-
-# We use the glob syntax (*/*/*.parquet) to force the engine to look for files directly 
-# rather than crawling the folder tree recursively
-s3_path = f"s3://{bucket}/post-earnings-forecast/transcripts/*/*/*.parquet"
+def connect_duckdb() -> duckdb.DuckDBPyConnection:
+    con = duckdb.connect()
+    con.execute("INSTALL aws; LOAD aws;")
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+    con.execute("CALL load_aws_credentials();")
+    con.execute("""
+        CREATE OR REPLACE SECRET s3_clean_secret (
+            TYPE S3,
+            PROVIDER credential_chain,
+            CHAIN 'env;config',
+            REGION 'ca-central-1'
+        );
+    """)
+    return con
 
 
+def _storage_options():
+    return {
+        "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
+        "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
+    }
 
-# storage options for Delta Lake
-       
-reader = con.execute("""
-    SELECT * 
-    FROM read_parquet(
-        's3://docks-otu-canada-central-data/post-earnings-forecast/transcripts/*/*/*.parquet',
-        hive_partitioning=true,
-        union_by_name=true
+
+def migrate_transcripts(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
+    reader = con.execute(f"""
+        SELECT *
+        FROM read_parquet(
+            '{S3_PARQUET_PATH}',
+            hive_partitioning=true,
+            union_by_name=true
+        )
+        ORDER BY symbol
+    """).fetch_record_batch(rows_per_batch=50_000)
+
+    write_deltalake(
+        DELTA_PATH,
+        reader,
+        partition_by=["symbol"],
+        mode="overwrite",
+        schema_mode="overwrite",
+        storage_options=_storage_options(),
     )
-    ORDER BY symbol
-""").fetch_record_batch(rows_per_batch=50_000)
+    print(f"Migration complete: written to {DELTA_PATH}")
 
-write_deltalake(
-    "s3://docks-otu-canada-central-data/post-earnings-forecast/transcripts_delta/",
-    reader,
-    partition_by=["symbol"],
-    mode="overwrite",
-    schema_mode="overwrite",
-    storage_options={
-        "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
-        "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
-    }
-
-)
+    transcript = pl.read_delta(DELTA_PATH, storage_options=_storage_options())
+    return transcript
 
 
-# checking the same table now
+def validate_transcripts(transcript: pl.DataFrame):
+    print("Columns:", transcript.columns)
+    size_gb = transcript.estimated_size() / 1e9
+    print(f"Estimated size: {size_gb:.2f} GB")
 
-transcript = pl.read_delta(
-    f"s3://{bucket}/post-earnings-forecast/transcripts_delta/",
-    storage_options={
-        "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
-        "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
-    }
-)
+    duplicates_df = (
+        transcript
+        .select(["symbol", "av_quarter"])
+        .group_by(["symbol", "av_quarter"])
+        .len(name="count")
+        .filter(pl.col("count") > 1)
+    )
+    print(f"Duplicate (symbol, av_quarter) rows: {duplicates_df.height}")
 
+    transcript_with_length = transcript.with_columns(
+        pl.col("transcript")
+        .list.eval(pl.element().struct.field("content"))
+        .list.join(" ")
+        .str.len_chars()
+        .alias("content_length")
+    )
 
-transcript.columns
-# check how much memoryy the dataframe is using
-transcript.estimated_size() / 1e9  # in GB
+    print("Content length distribution:")
+    print(transcript_with_length.select(pl.col("content_length")).describe())
 
+    mean = transcript_with_length.select(pl.col("content_length")).mean()[0, 0]
+    std = transcript_with_length.select(pl.col("content_length")).std()[0, 0]
+    threshold = mean - (2 * std)
 
-#---- // local backup for transcript data
-path = "src/ingestion/data/backup"
-# writing to local parquet file
-transcript.write_parquet(f"{path}/temp_transcripts.parquet")
+    flagged = transcript_with_length.filter(
+        (pl.col("content_length") < threshold)
+        | (pl.col("content_length").is_null())
+    ).select(["symbol", "av_quarter", "transcript", "content_length"])
 
+    print(f"Flagged rows (content_length < {threshold:.0f}): {flagged.height}")
 
-# checking duplicates if they exist for a combination of symbol and av_quarter , this is a polars frame
-duplicates_df = (
-    transcript
-    .select(["symbol", "av_quarter"])
-    .group_by(["symbol", "av_quarter"])
-    .len(name="count")
-    .filter(pl.col("count") > 1)
-)
-
-
-
-# validation if the transcripts does contain data
-
-
-# adding a new column transcript length to validate
-
-transcript = transcript.with_columns(
-    pl.col("transcript")
-    .list.eval(pl.element().struct.field("content"))
-    .list.join(" ")
-    .str.len_chars()
-    .alias("content_length")
-)
-
-# distribution of content length
-transcript.select(pl.col("content_length")).describe()
-
-# mean of content length
-mean = transcript.select(pl.col("content_length")).mean()[0, 0]
-std = transcript.select(pl.col("content_length")).std()[0, 0]
-threshold = mean - (2 * std)
-
-flagged = transcript.filter(
-    (pl.col("content_length") < threshold) | 
-    (pl.col("content_length").is_null())
-).select(["symbol", "av_quarter","transcript", "content_length"])    
-
-flagged.write_clipboard()  # copy to clipboard for review
-flagged['content_length'].value_counts().sort("content_length").write_clipboard()  # copy to clipboard for review
-
-transcript.sort("content_length", descending=False).select(["symbol", "av_quarter", "content_length"]).to_pandas().to_clipboard()
+    return transcript_with_length, flagged
 
 
-# filter IVZ	2025Q4
-transcript.filter((pl.col("symbol") == "IVZ") & (pl.col("av_quarter") == "2025Q4"))['transcript']
+def dump_schema():
+    dt = DeltaTable(DELTA_PATH, storage_options=_storage_options())
+    print(json.dumps(json.loads(dt.schema().to_json()), indent=2))
 
 
-
-mean = 43_969
-std  = 12_749
-threshold = mean - (2 * std)  # ~18,471 chars
-
-bad = transcript.filter(
-    (pl.col("content_length") < threshold) | 
-    (pl.col("content_length").is_null())
-).select(["symbol", "av_quarter", "transcript_length", "content_length"])\
- .sort("content_length")
-
-print(f"Flagged: {len(bad)} rows")
-bad
+def smoke_test():
+    print("=== Smoke test: migration ===")
+    try:
+        con = connect_duckdb()
+        result = con.execute("SELECT 1").fetchone()
+        if result[0] != 1:
+            raise RuntimeError("DuckDB connection test failed")
+        print("SUCCESS: DuckDB connected with AWS credentials")
+        con.close()
+    except Exception as e:
+        print(f"FAIL: DuckDB connection — {e}")
 
 
+def main():
+    load_dotenv()
+    con = connect_duckdb()
+
+    transcript = migrate_transcripts(con)
+
+    validate_transcripts(transcript)
+
+    os.makedirs(BACKUP_PATH, exist_ok=True)
+    transcript.write_parquet(f"{BACKUP_PATH}temp_transcripts.parquet")
+    print(f"Local backup written to {BACKUP_PATH}temp_transcripts.parquet")
+
+    dump_schema()
+
+    con.close()
 
 
-
-
-
-# ---/// table schema checks
-
-dt = DeltaTable(
-    f"s3://{bucket}/post-earnings-forecast/transcripts_delta/",
-    storage_options={
-        "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
-        "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
-    },
-)
-
-print(json.dumps(json.loads(dt.schema().to_json()), indent=2))
+if __name__ == "__main__":
+    load_dotenv()
+    smoke_test()
+    main()
