@@ -1,7 +1,7 @@
 import polars as pl
 
 PATH_SRC = "src/data/backup/finbert_tx"
-PATH_OUT = "src/ingestion/data/finbert_tx"
+PATH_OUT = "src/data/raw/finbert_tx"
 
 
 def main():

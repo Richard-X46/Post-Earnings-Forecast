@@ -2,44 +2,42 @@
 
 Predict post-earnings-announcement drift (PEAD) for S&P 500 stocks. The target is the highest intraday price over the nine trading days following each earnings event. Inputs span technical indicators, fundamentals, sector, and NLP sentiment from earnings-call transcripts (FinBERT) and news headlines. Models are trained on a 20-fold expanding-window walk-forward split across 2021 Q1 – 2025 Q4 over ~24,000 earnings events on ~500 S&P 500 constituents.
 
+![Project Workflow](Workflow.png)
+
 ## Project Structure
 
 ```
 .
-├── pyproject.toml              # deps, requires-python>=3.12
+├── pyproject.toml                  # deps, requires-python>=3.12
 ├── uv.lock
 ├── src/
-│   ├── ingestion/              # data fetching, backfill, S3 Delta Lake writes
-│   │   ├── table_setup.py      # create Delta tables in S3
+│   ├── data/                       # local Parquet data (backups, model staging)
+│   ├── ingestion/                  # data fetching, backfill, S3 Delta Lake writes
+│   │   ├── table_setup.py          # create Delta tables in S3
 │   │   ├── backfill_earnings.py
-│   │   ├── backfill_ohclc.py
+│   │   ├── backfill_ohvlc.py
 │   │   ├── backfill_transcripts.py
-│   │   ├── index_data.py       # VIX/SPX from yfinance
+│   │   ├── index_data.py           # VIX/SPX from yfinance
 │   │   ├── upgrades_downgrades.py
-│   │   ├── backup.py           # S3 → local Parquet backup + vacuum
+│   │   ├── backup.py               # S3 → local Parquet backup + vacuum
+│   │   ├── migration.py            # schema/data migration utilities
+│   │   ├── data/                   # local Parquet cache
 │   │   └── archive/
-│   ├── preprocessing/          # FinBERT sentiment, technical indicators
-│   │   ├── technical_features.py
-│   │   ├── bert_earnings_call.py
-│   │   ├── bert_compaction_tx.py
-│   │   ├── lm_sentiment_tx.py
-│   │   ├── sentiment_stg.py
-│   │   ├── join_validations.py
-│   │   └── strat_table.py
-│   ├── modeling/               # TabNet, DNN, XGBoost, RF ablation
-│   │   ├── basepaper/
-│   │   ├── tabnet/             # Modal GPU TabNet pipeline + trade strategy
-│   │   ├── dnn/
-│   │   ├── b1-5/                # ablation ladder (B1–B4) + tuned B5
-│   │   ├── model_outputs/      # parquet + JSON results, pickled models
-│   │   └── upload_model_data.py
-│   └── notebooks/              # EDA + pipeline notebooks
-├── docs/                       # planning docs, ablation notes
-└── tabnet_trade_ledger.csv     # per-trade ledger from final strategy backtest
+│   ├── preprocessing/              # feature engineering, FinBERT, sentiment staging
+│   │   ├── technical_features.py   # OHLCV → tech indicators + modeling table
+│   │   ├── bert_earnings_call.py   # FinBERT inference on transcripts
+│   │   ├── bert_compaction_tx.py   # strip raw text from FinBERT output
+│   │   ├── sentiment_stg.py        # aggregate transcript & news sentiment
+│   │   └── strat_table.py          # build strategy backtest table
+│   ├── modeling/                   # TabNet, DNN, model outputs
+│   │   ├── tabnet/                 # Modal GPU TabNet pipeline + trade strategy
+│   │   ├── dnn/                    # multitask DNN classifier + regressor
+│   │   ├── b1-5/                   # RF/XGBoost ablation experiments (B1–B4)
+│   └── notebooks/                  # EDA notebook
 ```
 
 - **Data**: S3 Delta Lake (primary) + local Parquet backups under `src/ingestion/data/`. S&P 500 tickers, OHLCV, earnings calendars, transcripts, analyst upgrades/downgrades, VIX/SPX.
-- **Notebooks**: EDA (`src/notebooks/EDA_final.ipynb`), model pipelines (`src/modeling/b1-5/*.ipynb`, `src/modeling/tabnet/*.ipynb`, `src/modeling/dnn/*.ipynb`).
+- **Notebooks**: EDA (`src/notebooks/EDA_final.ipynb`), model training and evaluation (`src/modeling/tabnet/*.ipynb`, `src/modeling/dnn/*.ipynb`).
 - **Scripts**: ingestion (`src/ingestion/`), preprocessing (`src/preprocessing/`), modeling (`src/modeling/`).
 
 ## Dependencies / Libraries to Install
@@ -53,7 +51,6 @@ Python ≥ 3.12. Managed with [`uv`](https://docs.astral.sh/uv/).
 | xgboost | Gradient-boosted trees |
 | tensorflow | DNN experiments |
 | torch, pytorch-tabnet | TabNet |
-| pysentiment2 | Loughlin-McDonald sentiment dictionary |
 | transformers (via HF_TOKEN) | FinBERT embeddings |
 | ta-lib | Technical indicators |
 | yfinance, requests | Market data fetching |
@@ -84,80 +81,81 @@ cp .env.example .env         # fill in AWS + API keys (see table below)
 
 AWS region: `ca-central-1`.
 
-**Data preprocessing**
+### Preprocessing pipeline
+
+The data pipeline flows top-down. Each step depends on the outputs of the previous:
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│ 1. Ingestion (S3)                                             │
+│    backfill_earnings.py → backfill_ohvlc.py                   │
+│    → backfill_transcripts.py → index_data.py                  │
+│    → upgrades_downgrades.py                                   │
+├───────────────────────────────────────────────────────────────┤
+│ 2. Engineering & Sentiment                                    │
+│    technical_features.py  → tech_modeling_table.parquet       │
+│    bert_earnings_call.py  → finbert_tx/ (per-symbol parquet)  │
+│    bert_compaction_tx.py  → finbert_tx.parquet (merged)       │
+│    sentiment_stg.py       → finbert_tx_agg_weighted.parquet   │
+│                           → nz_sentiment.parquet               │
+│    strat_table.py         → strat_table.parquet               │
+├───────────────────────────────────────────────────────────────┤
+│ 3. Model Training                                             │
+│    TabNet (Modal GPU) / Multitask DNN / b1-b4 experiments     │
+├───────────────────────────────────────────────────────────────┤
+│ 4. Strategy Backtest                                          │
+│    TABNET_STRAT_4.ipynb    | DNN_STRAT_4.ipynb                │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Ingestion**
 
 ```bash
 python src/ingestion/backfill_earnings.py
-python src/ingestion/backfill_ohclc.py
+python src/ingestion/backfill_ohvlc.py
 python src/ingestion/backfill_transcripts.py
+python src/ingestion/index_data.py
+```
+
+**Preprocessing**
+
+```bash
 python src/preprocessing/technical_features.py
 python src/preprocessing/bert_earnings_call.py
-python src/preprocessing/join_validations.py
+python src/preprocessing/bert_compaction_tx.py
+python src/preprocessing/sentiment_stg.py
+python src/preprocessing/strat_table.py
 ```
 
 **Model training**
 
 ```bash
-# ablation ladder (B1–B4): RF + XGBoost classifiers and regressors
-jupyter src/modeling/b1-5/b4_pipeline.ipynb
-
 # TabNet on Modal T4 GPU — 20-fold expanding window
-python src/modeling/tabnet/upload_model_data.py
+python src/modeling/upload_model_data.py
 modal run src/modeling/tabnet/modal_tabnet_pead.py
 python src/modeling/tabnet/fetch_modal_results.py
 
+# TabNet local (Colab) — Optuna-tuned walk-forward
+jupyter src/modeling/tabnet/tabnet_pruned.ipynb
+
 # DNN multitask
 jupyter src/modeling/dnn/multitask_dnn_updates.ipynb
+
+# DNN strategy backtest
+jupyter src/modeling/dnn/DNN_STRAT_4.ipynb
 ```
 
 **Model evaluation**
 
 ```bash
-jupyter src/modeling/tabnet/modal_tabnet_analysis_updated_results.ipynb   # per-fold DA/MAE/RMSE, confusion matrix
-jupyter src/modeling/tabnet/tabnet_trade_strat_final.ipynb                # trading-strategy backtest
+jupyter src/modeling/tabnet/modal_tabnet_analysis_updated_results.ipynb   # per-fold DA/MAE/RMSE
+jupyter src/modeling/tabnet/tabnet_pruned.ipynb                          # loss curves, confusion matrix
+jupyter src/modeling/tabnet/TABNET_STRAT_4.ipynb                         # trading-strategy backtest
 ```
 
 ## Results
 
-20 expanding-window walk-forward folds. Directional Accuracy (DA) = 3-class hit rate on out-of-sample quarter. Direction classes: low / mid / high peak return over t+1…t+9. Baseline (always majority class): DA = 0.332.
-
-### Ablation ladder (B1–B4) — modality contribution
-
-| Step | Modalities | # Features |
-|---|---|---|
-| B1 | Technical indicators only | 239 |
-| B2 | B1 + Fundamentals + Sector one-hot | 250 |
-| B3 | B2 + Transcript sentiment (FinBERT) | 254 |
-| B4 | B3 + News sentiment (NZ) | 258 |
-
-#### Random Forest — direction (3-class)
-
-| Step | DA | F1 (weighted) | AUC (OvR) | Δ DA |
-|---|---|---|---|---|
-| B1 — Technical only | 0.4505 | 0.4170 | 0.6004 | — |
-| B2 — + Fundamentals + Sector | 0.4478 | 0.4127 | 0.5994 | −0.0027 |
-| B3 — + Transcript sentiment | 0.4442 | 0.4098 | 0.5993 | −0.0036 |
-| B4 — + News sentiment | 0.4430 | 0.4090 | 0.5981 | −0.0012 |
-
-#### XGBoost — direction (3-class)
-
-| Step | DA | F1 (weighted) | AUC (OvR) | Δ DA |
-|---|---|---|---|---|
-| B1 — Technical only | 0.4328 | 0.4092 | 0.5783 | — |
-| B2 — + Fundamentals + Sector | 0.4397 | 0.4003 | 0.5792 | +0.0069 |
-| B3 — + Transcript sentiment | 0.4273 | 0.4026 | 0.5769 | −0.0124 |
-| B4 — + News sentiment | 0.4341 | 0.4102 | 0.5798 | +0.0068 |
-
-#### XGBoost — magnitude (peak return)
-
-| Step | MAE | RMSE | Pooled R² | Δ R² |
-|---|---|---|---|---|
-| B1 — Technical only | 0.0319 | 0.0455 | −0.0126 | — |
-| B2 — + Fundamentals + Sector | 0.0309 | 0.0441 | 0.0410 | +0.0536 |
-| B3 — + Transcript sentiment | 0.0320 | 0.0460 | −0.0371 | −0.0781 |
-| B4 — + News sentiment | 0.0322 | 0.0461 | −0.0482 | −0.0111 |
-
-Directional accuracy degrades monotonically as modalities are added; technical features dominate (≥92% of TabNet attention).
+20 expanding-window walk-forward folds. Directional Accuracy (DA) = 3-class hit rate on out-of-sample quarter. Direction classes: low (<2%) / moderate (2–4%) / strong (≥4%) peak return over t+1…t+9. Baseline (always majority class): DA = 0.332.
 
 ### TabNet vs DNN — 20-fold walk-forward (direction)
 
@@ -181,21 +179,18 @@ Strat 1 enters long when TabNet predicts class 1 or 2, exits at +2% or after 10 
 | Skipped (insufficient cash) | 0 |
 | Net P&L | $6,637 |
 | Win rate | 75.9% |
-| Final equity | $56,269 |
-| Annualised Sharpe (portfolio) | 1.31 |
+| Final equity | $56,637 |
+| Annualised Sharpe (portfolio) | 2.04 |
 | Max drawdown | −4.45% |
-| Return on deployed capital | 91.5% |
 
-#### Threshold sweep (best by Sharpe)
-
-| Threshold | Sharpe | Total P&L | Skipped |
-|---|---|---|---|
-| 2.0% | 2.04 | $6,637 | 0 |
-| 5.0% (best) | 2.33 | $12,138 | 13 |
-
-Per-trade ledger exported to `tabnet_trade_ledger.csv` (8,221 rows): symbol, signal/entry/exit dates and prices, threshold, model fold, gross/net P&L.
 
 ### Caveats
 
-- Results assume zero transaction costs and slippage — see `src/modeling/tabnet/strat file implementation.md` for the validation TODO list (walk-forward threshold selection, cost grids, deployed-capital Sharpe, drawdown / Calmar / Sortino, benchmark comparison).
-- Later folds (2025 Q4) have fewer eligible events; report metrics across all folds rather than tail periods.
+- Results assume zero transaction costs and slippage — see `docs/strat file implementation.md` for outstanding validation items (walk-forward threshold selection, cost grids, deployed-capital Sharpe, drawdown / Calmar / Sortino, benchmark comparison).
+- The `model_outputs/` directory contains per-fold results (Parquet, JSON histories, pickled models) for both TabNet and DNN runs; these are the canonical data used by the strategy notebooks.
+
+
+### Raw data link 
+Google Drive - [backup folder](https://drive.google.com/drive/folders/1RaFeSjkrssJbS9sckS0iFaSpIXfA_z4V?usp=sharing)
+
+The backup folder sits withint src/data
