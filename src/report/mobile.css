@@ -1,0 +1,8 @@
+/* Mobile: wide tables scroll horizontally instead of breaking layout. */
+@media (max-width: 768px) {
+  .cell-output table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

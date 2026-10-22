@@ -6,11 +6,13 @@ format:
     toc: true
     toc-depth: 3
     toc-location: left
+    css: mobile.css
     grid:
       sidebar-width: 230px
       body-width: 1000px
       margin-width: 200px
     embed-resources: true
+    include-after-body: mobile.html
 jupyter: python3
 execute:
   freeze: auto

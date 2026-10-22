@@ -1,0 +1,25 @@
+<script>
+// Mobile pass: on narrow viewports, declutter every Plotly chart once
+// it has rendered (fewer axis ticks, smaller type). Desktop is untouched.
+(function () {
+  function relax() {
+    if (!window.matchMedia("(max-width: 768px)").matches) return;
+    if (!window.Plotly) return;
+    document.querySelectorAll(".plotly-graph-div").forEach(function (gd) {
+      var upd = { "font.size": 10, "margin.t": 48 };
+      Object.keys(gd.layout || {}).forEach(function (k) {
+        if (/^(x|y)axis\d*$/.test(k)) {
+          upd[k + ".tickfont.size"] = 9;
+          upd[k + ".nticks"] = 6;
+        }
+      });
+      try { window.Plotly.relayout(gd, upd); } catch (e) { /* keep desktop layout */ }
+    });
+  }
+  if (document.readyState === "complete") {
+    setTimeout(relax, 300);
+  } else {
+    window.addEventListener("load", function () { setTimeout(relax, 300); });
+  }
+})();
+</script>
