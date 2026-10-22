@@ -1,0 +1,12 @@
+# Static report server: serves the prebuilt src/out/report.html.
+# Rendering happens locally via Quarto (see README); this image only hosts
+# the finished HTML. No Python stack, no secrets, tiny and fast.
+FROM nginx:alpine
+
+COPY src/out/report.html /usr/share/nginx/html/index.html
+
+EXPOSE 80
+
+# Run: docker run --rm -p 8080:80 pead-report  ->  http://localhost:8080
+CMD ["nginx", "-g", "daemon off;"]
+

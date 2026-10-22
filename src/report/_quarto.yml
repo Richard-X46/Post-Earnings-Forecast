@@ -1,0 +1,25 @@
+project:
+  title: "Post-Earnings Forecast — End-to-End Report"
+  execute-dir: project
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    grid:
+      sidebar-width: 230px
+      body-width: 1000px
+      margin-width: 200px
+    embed-resources: true
+    fig-responsive: true
+
+execute:
+  echo: false
+  freeze: auto
+  cache: true
+  warning: false
+  message: false
+
+engine: jupyter

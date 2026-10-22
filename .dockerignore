@@ -1,0 +1,9 @@
+# The report image only needs the prebuilt HTML. Exclude everything else
+# from the build context (Docker COPYs just the one file).
+*
+!src/
+src/*
+!src/out/
+src/out/*
+!src/out/report.html
+!Dockerfile.report

@@ -1,3 +1,6 @@
+# macOS metadata (matches at any depth)
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -236,3 +239,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 .databricks
+
+# Single Quarto report build outputs (source .qmd + vendored data/ stay tracked)
+src/out/
+src/report/out/
+src/report/_freeze/
+src/report/.quarto/
+src/report/.jupyter_cache/

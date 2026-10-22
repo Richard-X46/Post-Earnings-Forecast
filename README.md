@@ -1,196 +1,73 @@
 # Post-Earnings Forecast
 
-Predict post-earnings-announcement drift (PEAD) for S&P 500 stocks. The target is the highest intraday price over the nine trading days following each earnings event. Inputs span technical indicators, fundamentals, sector, and NLP sentiment from earnings-call transcripts (FinBERT) and news headlines. Models are trained on a 20-fold expanding-window walk-forward split across 2021 Q1 – 2025 Q4 over ~24,000 earnings events on ~500 S&P 500 constituents.
+Predict post-earnings-announcement drift (PEAD) for S&P 500 stocks: the target is the peak intraday high over the nine trading days (t+2…t+10) after each earnings event, predicted from technicals, fundamentals, sector, and FinBERT/news sentiment. ~24,000 events on ~500 constituents, evaluated on 20 expanding-window walk-forward folds (2021 Q1–2025 Q4).
+
+**[Read the interactive report](https://richard-pears.dev/pead-report/)**
 
 ![Project Workflow](Workflow.png)
 
-## Project Structure
+## Report (start here)
 
-```
-.
-├── pyproject.toml                  # deps, requires-python>=3.12
-├── uv.lock
-├── src/
-│   ├── data/                       # local Parquet data (backups, model staging)
-│   ├── ingestion/                  # data fetching, backfill, S3 Delta Lake writes
-│   │   ├── table_setup.py          # create Delta tables in S3
-│   │   ├── backfill_earnings.py
-│   │   ├── backfill_ohvlc.py
-│   │   ├── backfill_transcripts.py
-│   │   ├── index_data.py           # VIX/SPX from yfinance
-│   │   ├── upgrades_downgrades.py
-│   │   ├── backup.py               # S3 → local Parquet backup + vacuum
-│   │   ├── migration.py            # schema/data migration utilities
-│   │   ├── data/                   # local Parquet cache
-│   │   └── archive/
-│   ├── preprocessing/              # feature engineering, FinBERT, sentiment staging
-│   │   ├── technical_features.py   # OHLCV → tech indicators + modeling table
-│   │   ├── bert_earnings_call.py   # FinBERT inference on transcripts
-│   │   ├── bert_compaction_tx.py   # strip raw text from FinBERT output
-│   │   ├── sentiment_stg.py        # aggregate transcript & news sentiment
-│   │   └── strat_table.py          # build strategy backtest table
-│   ├── modeling/                   # TabNet, DNN, model outputs
-│   │   ├── tabnet/                 # Modal GPU TabNet pipeline + trade strategy
-│   │   ├── dnn/                    # multitask DNN classifier + regressor
-│   │   ├── b1-5/                   # RF/XGBoost ablation experiments (B1–B4)
-│   └── notebooks/                  # EDA notebook
-```
-
-- **Data**: S3 Delta Lake (primary) + local Parquet backups under `src/ingestion/data/`. S&P 500 tickers, OHLCV, earnings calendars, transcripts, analyst upgrades/downgrades, VIX/SPX.
-- **Notebooks**: EDA (`src/notebooks/EDA_final.ipynb`), model training and evaluation (`src/modeling/tabnet/*.ipynb`, `src/modeling/dnn/*.ipynb`).
-- **Scripts**: ingestion (`src/ingestion/`), preprocessing (`src/preprocessing/`), modeling (`src/modeling/`).
-
-## Dependencies / Libraries to Install
-
-Python ≥ 3.12. Managed with [`uv`](https://docs.astral.sh/uv/).
-
-| Library | Purpose |
-|---|---|
-| numpy, pandas, polars, pyarrow | Data wrangling |
-| scikit-learn | Baseline models, metrics |
-| xgboost | Gradient-boosted trees |
-| tensorflow | DNN experiments |
-| torch, pytorch-tabnet | TabNet |
-| transformers (via HF_TOKEN) | FinBERT embeddings |
-| ta-lib | Technical indicators |
-| yfinance, requests | Market data fetching |
-| deltalake, duckdb, s3fs, boto3 | S3 + Delta Lake I/O |
-| modal | GPU jobs (TabNet training) |
-| optuna | Hyperparameter tuning |
-| matplotlib, seaborn, plotly, altair | Visualisation |
-| openpyxl | Excel I/O |
-
-System dependency: `brew install ta-lib` (macOS).
-
-## How to Run
+One self-contained Quarto walkthrough, end to end: EDA, models, and replayed trading strategy with 27 live Plotly charts:
 
 ```bash
-uv sync                      # install dependencies
-cp .env.example .env         # fill in AWS + API keys (see table below)
+export PATH="$HOME/.local/quarto/bin:$PATH"   # Quarto CLI 1.6.42
+export QUARTO_PYTHON="$PWD/.venv/bin/python"
+quarto render src/report/report.qmd --to html --output-dir "$PWD/src/out"
+# open src/out/report.html
 ```
 
-| Variable | Purpose |
-|---|---|
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | S3 + Delta Lake |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | S3 (secondary pattern) |
-| `AWS_SESSION_TOKEN` | S3 session token |
-| `S3_BUCKET` | S3 bucket name |
-| `AV_PREMIUM_KEY` | Alpha Vantage premium API key |
-| `DUCKDB_KEY` | Encrypted Parquet key for DuckDB |
-| `HF_TOKEN` | HuggingFace token (Modal GPU jobs) |
+Renders offline from vendored data (`src/report/data/`, ~46MB). No S3, keys, or GPU.
 
-AWS region: `ca-central-1`.
-
-### Preprocessing pipeline
-
-The data pipeline flows top-down. Each step depends on the outputs of the previous:
-
-```
-┌───────────────────────────────────────────────────────────────┐
-│ 1. Ingestion (S3)                                             │
-│    backfill_earnings.py → backfill_ohvlc.py                   │
-│    → backfill_transcripts.py → index_data.py                  │
-│    → upgrades_downgrades.py                                   │
-├───────────────────────────────────────────────────────────────┤
-│ 2. Engineering & Sentiment                                    │
-│    technical_features.py  → tech_modeling_table.parquet       │
-│    bert_earnings_call.py  → finbert_tx/ (per-symbol parquet)  │
-│    bert_compaction_tx.py  → finbert_tx.parquet (merged)       │
-│    sentiment_stg.py       → finbert_tx_agg_weighted.parquet   │
-│                           → nz_sentiment.parquet               │
-│    strat_table.py         → strat_table.parquet               │
-├───────────────────────────────────────────────────────────────┤
-│ 3. Model Training                                             │
-│    TabNet (Modal GPU) / Multitask DNN / b1-b4 experiments     │
-├───────────────────────────────────────────────────────────────┤
-│ 4. Strategy Backtest                                          │
-│    TABNET_STRAT_4.ipynb    | DNN_STRAT_4.ipynb                │
-└───────────────────────────────────────────────────────────────┘
-```
-
-**Ingestion**
+Serve the prebuilt HTML anywhere:
 
 ```bash
-python src/ingestion/backfill_earnings.py
-python src/ingestion/backfill_ohvlc.py
-python src/ingestion/backfill_transcripts.py
-python src/ingestion/index_data.py
+docker build -f Dockerfile.report -t pead-report .
+docker run --rm -p 8080:80 pead-report   # http://localhost:8080
 ```
 
-**Preprocessing**
-
-```bash
-python src/preprocessing/technical_features.py
-python src/preprocessing/bert_earnings_call.py
-python src/preprocessing/bert_compaction_tx.py
-python src/preprocessing/sentiment_stg.py
-python src/preprocessing/strat_table.py
-```
-
-**Model training**
-
-```bash
-# TabNet on Modal T4 GPU — 20-fold expanding window
-python src/modeling/upload_model_data.py
-modal run src/modeling/tabnet/modal_tabnet_pead.py
-python src/modeling/tabnet/fetch_modal_results.py
-
-# TabNet local (Colab) — Optuna-tuned walk-forward
-jupyter src/modeling/tabnet/tabnet_pruned.ipynb
-
-# DNN multitask
-jupyter src/modeling/dnn/multitask_dnn_updates.ipynb
-
-# DNN strategy backtest
-jupyter src/modeling/dnn/DNN_STRAT_4.ipynb
-```
-
-**Model evaluation**
-
-```bash
-jupyter src/modeling/tabnet/modal_tabnet_analysis_updated_results.ipynb   # per-fold DA/MAE/RMSE
-jupyter src/modeling/tabnet/tabnet_pruned.ipynb                          # loss curves, confusion matrix
-jupyter src/modeling/tabnet/TABNET_STRAT_4.ipynb                         # trading-strategy backtest
-```
+Push to `main` renders in CI and ships `ghcr.io/richard-x46/post-earnings-forecast:latest` (`.github/workflows/docker-publish.yml`); the VPS serves it at the URL above via Caddy (`docker-compose.report.yml`).
 
 ## Results
 
-20 expanding-window walk-forward folds. Directional Accuracy (DA) = 3-class hit rate on out-of-sample quarter. Direction classes: low (<2%) / moderate (2–4%) / strong (≥4%) peak return over t+1…t+9. Baseline (always majority class): DA = 0.332.
+Directional Accuracy (DA) = 3-class hit rate on the held-out quarter. Classes: low (<2%) / moderate (2–4%) / strong (≥4%) peak return. Majority-class baseline: 0.332.
 
-### TabNet vs DNN — 20-fold walk-forward (direction)
-
-| Model | Mean DA | Mean MAE | Mean RMSE | Best fold DA | Worst fold DA | Test rows |
+| Model | Mean DA | Mean MAE | Mean RMSE | Best fold | Worst fold | Test rows |
 |---|---|---|---|---|---|---|
 | TabNet (initial) | 0.4371 | 0.0313 | 0.0476 | 0.702 (2022 Q4) | 0.299 (2024 Q2) | 9,937 |
 | TabNet (updated) | 0.4495 | 0.0303 | 0.0446 | 0.690 (2022 Q4) | 0.335 (2025 Q1) | 9,937 |
 | Multitask DNN | 0.4573 | 0.0296 | 0.0428 | 0.700 (2022 Q4) | 0.359 (2024 Q1) | 7,967 |
 
-Both models consistently beat the 0.332 baseline; the DNN edges TabNet on mean DA and RMSE.
+Strategy (TabNet signals, long classes 1–2 at t+1 close, exit at take-profit or t+10; $50k, $200/trade, no costs): Strat-1 at T=2% nets **+$6,637** (8,221 trades, 75.9% win, Sharpe 2.04, MaxDD −4.45%); Sharpe-selected T=5% nets **+$12,138** (Sharpe 2.33), profitable every full year. DNN T=5%: +$7,774 (Sharpe 1.77).
 
-### Trading strategy backtest (TabNet predictions, exit at 2% gain or t+10)
+Caveats: zero transaction costs/slippage; threshold picked on its evaluation sweep; no SPY benchmark or bootstrap CIs yet. Details in the report (§9) and `docs/strat file implementation.md`.
 
-Strat 1 enters long when TabNet predicts class 1 or 2, exits at +2% or after 10 trading days. No transaction costs or slippage.
+## Project structure
 
-| Metric | Value |
+```
+├── src/
+│   ├── report/          # Quarto report (report.qmd) + vendored data subset
+│   ├── out/             # rendered report.html (gitignored build output)
+│   ├── ingestion/       # S3 Delta Lake backfills (earnings, OHLCV, transcripts, VIX/SPX)
+│   ├── preprocessing/   # technical features, FinBERT, sentiment staging, strat table
+│   ├── modeling/        # TabNet (Modal GPU), multitask DNN, B1–B4 ablations, outputs
+│   └── notebooks/       # EDA_final.ipynb
+├── Dockerfile.report    # static nginx server for the prebuilt HTML
+└── pyproject.toml       # deps, requires-python>=3.12 (managed with uv)
+```
+
+## Full pipeline (needs keys + GPU)
+
+```bash
+uv sync
+cp .env.example .env   # AWS + Alpha Vantage + HuggingFace keys (region ca-central-1)
+```
+
+| Step | Commands |
 |---|---|
-| Initial capital | $50,000 |
-| Position size | $200 |
-| Trades | 8,221 |
-| Skipped (insufficient cash) | 0 |
-| Net P&L | $6,637 |
-| Win rate | 75.9% |
-| Final equity | $56,637 |
-| Annualised Sharpe (portfolio) | 2.04 |
-| Max drawdown | −4.45% |
+| Ingestion (S3) | `backfill_earnings.py` → `backfill_ohvlc.py` → `backfill_transcripts.py` → `index_data.py` (all under `src/ingestion/`) |
+| Engineering + sentiment | `technical_features.py` → `bert_earnings_call.py` → `bert_compaction_tx.py` → `sentiment_stg.py` → `strat_table.py` (all under `src/preprocessing/`) |
+| TabNet (Modal T4, 20 folds) | `upload_model_data.py` → `modal run src/modeling/tabnet/modal_tabnet_pead.py` → `fetch_modal_results.py` |
+| DNN / ablations / backtests | `multitask_dnn_updates.ipynb`, `b1-5/*.ipynb`, `TABNET_STRAT_4.ipynb`, `DNN_STRAT_4.ipynb` |
 
-
-### Caveats
-
-- Results assume zero transaction costs and slippage — see `docs/strat file implementation.md` for outstanding validation items (walk-forward threshold selection, cost grids, deployed-capital Sharpe, drawdown / Calmar / Sortino, benchmark comparison).
-- The `model_outputs/` directory contains per-fold results (Parquet, JSON histories, pickled models) for both TabNet and DNN runs; these are the canonical data used by the strategy notebooks.
-
-
-### Raw data link 
-Google Drive - [backup folder](https://drive.google.com/drive/folders/1RaFeSjkrssJbS9sckS0iFaSpIXfA_z4V?usp=sharing)
-
-The backup folder sits withint src/data
+Key libraries: polars, scikit-learn, xgboost, torch + pytorch-tabnet, tensorflow, transformers (FinBERT), ta-lib (`brew install ta-lib` on macOS), deltalake + boto3, modal, optuna, plotly. Per-fold outputs (Parquet, histories, models) live under `src/modeling/model_outputs/`.
